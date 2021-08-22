@@ -84,14 +84,15 @@ func stringInArr(strArg string, arr []string) bool {
 	return false
 }
 
-// getComprtIncludes reads in the compartment includes file and adds the
+// getComprtIncludes reads in the comprt includes file and adds the
 // discovered packages into includePkgs.
-func getComprtIncludes(includePkgs *[]string, args *cmdArgs) {
+func getComprtIncludes(includePkgs *[]string, args *cmdArgs) error {
 	// inspired by:
 	// https://stackoverflow.com/questions/8757389/reading-a-file-line-by-line-in-go/16615559#16615559
 	file, err := os.Open(args.comprtIncludesPath)
 	if err != nil {
-		log.Fatal(err)
+		// the comprt includes is optional
+		return nil
 	}
 	defer file.Close()
 
@@ -102,8 +103,9 @@ func getComprtIncludes(includePkgs *[]string, args *cmdArgs) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
+		return err
 	}
+	return nil
 }
 
 // parseCmdArgs interprets the command arguments passed in. Saving particular
@@ -235,8 +237,14 @@ func main() {
 		debootstrap[0] = "debootstrap"
 	}
 
-	getComprtIncludes(&includePkgs, args)
-	debootstrap = append(debootstrap, "--include="+strings.Join(includePkgs, ","))
+	if err := getComprtIncludes(&includePkgs, args); err != nil {
+		log.Fatal(err)
+	}
+
+	if includePkgs != nil {
+		debootstrap = append(debootstrap, "--include="+strings.Join(includePkgs, ","))
+	}
+
 	if args.passThroughFlags != nil {
 		debootstrap = append(debootstrap, args.passThroughFlags...)
 	}
