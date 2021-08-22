@@ -52,7 +52,7 @@ var CustomOnUsageErrorFunc cli.OnUsageErrorFunc = func(context *cli.Context, err
 
 // Copy the src file to dst. Any existing file will not be overwritten and will not
 // copy file attributes.
-func Copy(src, dst string) error {
+func copy(src, dst string) error {
 	// inspired from:
 	// https://stackoverflow.com/questions/21060945/simple-way-to-copy-a-file#answer-21061062
 	in, err := os.Open(src)
@@ -124,17 +124,17 @@ func parseCmdArgs(args *cmdArgs) {
 			args.helpFlagPassedIn = true
 		} else if value == "--passthrough" {
 			// index + 1 to ignoring iterating over passthrough flag
-			for passthrough_index, passthrough_value := range localOsArgs[index+1:] {
-				if strings.HasPrefix(passthrough_value, "-") {
-					args.passThroughFlags = append(args.passThroughFlags, passthrough_value)
+			for passthroughIndex, passthroughValue := range localOsArgs[index+1:] {
+				if strings.HasPrefix(passthroughValue, "-") {
+					args.passThroughFlags = append(args.passThroughFlags, passthroughValue)
 					flagArg = true
 				} else if !flagArg {
 					// index + 1 to keep passthrough flag
-					// index + passthrough_index + 1 to truncate final flag argument
-					localOsArgs = append(localOsArgs[:index+1], localOsArgs[index+passthrough_index+1:]...)
+					// index + passthroughIndex + 1 to truncate final flag argument
+					localOsArgs = append(localOsArgs[:index+1], localOsArgs[index+passthroughIndex+1:]...)
 					break
 				} else {
-					args.passThroughFlags = append(args.passThroughFlags, passthrough_value)
+					args.passThroughFlags = append(args.passThroughFlags, passthroughValue)
 					flagArg = false
 				}
 			}
@@ -256,7 +256,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := Copy(args.comprtConfigPath, filepath.Join(args.target, targetComprtConfigPath)); err != nil {
+	if err := copy(args.comprtConfigPath, filepath.Join(args.target, targetComprtConfigPath)); err != nil {
 		log.Fatal(err)
 	}
 
