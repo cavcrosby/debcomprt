@@ -84,6 +84,16 @@ func stringInArr(strArg string, arr []string) bool {
 	return false
 }
 
+// Looks to see if the strings are in the string array.
+func stringsInArr(strArgs []string, arr []string) bool {
+	for _, value := range strArgs {
+		if stringInArr(value, arr) {
+			return true
+		}
+	}
+	return false
+}
+
 // getComprtIncludes reads in the comprt includes file and adds the
 // discovered packages into includePkgs.
 func getComprtIncludes(includePkgs *[]string, args *cmdArgs) error {
@@ -120,9 +130,9 @@ func parseCmdArgs(args *cmdArgs) {
 			continue
 		} else if value == "--" {
 			break
-		} else if stringInArr("-h", localOsArgs) || stringInArr("--help", localOsArgs) {
+		} else if stringsInArr([]string{"-h", "-help", "--help"}, localOsArgs) {
 			args.helpFlagPassedIn = true
-		} else if value == "--passthrough" {
+		} else if stringInArr(value, []string{"-passthrough", "--passthrough"}) {
 			// index + 1 to ignoring iterating over passthrough flag
 			for passthroughIndex, passthroughValue := range localOsArgs[index+1:] {
 				if strings.HasPrefix(passthroughValue, "-") {
