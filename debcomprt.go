@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	comprtIncludeFile   = "comprtinc.txt"
 	comprtConfigFile    = "comprtconfig"
+	comprtIncludeFile   = "comprtinc.txt"
 	defaultDebianMirror = "http://ftp.us.debian.org/debian/"
 	defaultUbuntuMirror = "http://archive.ubuntu.com/ubuntu/"
 )
@@ -237,8 +237,8 @@ func main() {
 		passthrough:            false,
 		quiet:                  false,
 		useShellImplementation: false,
-		comprtIncludesPath:     "./" + comprtIncludeFile,
-		comprtConfigPath:       "./" + comprtConfigFile,
+		comprtIncludesPath:     filepath.Join(".", comprtIncludeFile),
+		comprtConfigPath:       filepath.Join(".", comprtConfigFile),
 	}
 	parseCmdArgs(args)
 
@@ -282,8 +282,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	syscall.Chroot(args.target)
-	syscall.Chdir("/") // makes sh happy, otherwise getcwd() for sh fails
+	if err := syscall.Chroot(args.target); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := syscall.Chdir("/"); err != nil { // makes sh happy, otherwise getcwd() for sh fails
+		log.Fatal(err)
+	}
 
 	shPath, err := exec.LookPath("sh")
 	if err != nil {
