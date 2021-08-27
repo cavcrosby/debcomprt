@@ -21,6 +21,7 @@ bin_dir = ${exec_prefix}
 HELP = help
 SETUP = setup
 INSTALL = install
+TEST = test
 CLEAN = clean
 
 # inspired from:
@@ -34,6 +35,7 @@ ${HELP}:
 >	@echo '  ${TARGET_EXEC}          - the decomprt binary'
 >	@echo '  ${SETUP}              - installs the go dependencies for this project'
 >	@echo '  ${INSTALL}            - installs the local decomprt binary (pathing: ${prefix})'
+>	@echo '  ${TEST}               - runs test suite for the project'
 >	@echo '  ${CLEAN}              - remove files created by other targets'
 
 ${TARGET_EXEC}: debcomprt.go
@@ -46,6 +48,10 @@ ${SETUP}:
 .PHONY: ${INSTALL}
 ${INSTALL}: ${TARGET_EXEC}
 >	${GOC} install
+
+.PHONY: ${TEST}
+${TEST}: ${TARGET_EXEC}
+>	sudo ${GOC} test -v
 
 .PHONY: ${CLEAN}
 ${CLEAN}:

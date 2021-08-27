@@ -17,3 +17,6 @@
 # repo specfic
 comprtconfig
 comprtinc.txt
+
+# local tmp test dir
+_*
