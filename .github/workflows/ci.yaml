@@ -1,0 +1,26 @@
+name: Continuous Integration
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.17
+
+    - name: Install make
+      run: sudo apt-get install build-essential --assume-yes
+
+    - name: Build
+      run: |
+        make setup
+        make debcomprt
+        make install
+  test:
+    - name: Run Unit/Integration Tests
+      run: sudo make test
