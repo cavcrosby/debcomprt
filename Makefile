@@ -52,9 +52,7 @@ ${INSTALL}: ${TARGET_EXEC}
 
 .PHONY: ${TEST}
 ${TEST}: ${TARGET_EXEC}
->	if [ -z "$$(command -v ${TARGET_EXEC})" ]; then ln --symbolic --force "${CURDIR}/${TARGET_EXEC}" "${TEST_BIN_DIR}/${TARGET_EXEC}"; fi
->	sudo ${GOC} test -v
->	if [ -L "${TEST_BIN_DIR}/${TARGET_EXEC}" ]; then rm --force "${TEST_BIN_DIR}/${TARGET_EXEC}"; fi
+>	sudo PATH="${PATH}" ${GOC} test -v
 
 .PHONY: ${CLEAN}
 ${CLEAN}:

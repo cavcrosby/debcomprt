@@ -33,4 +33,4 @@ jobs:
         make install
 
     - name: Run Unit/Integration Tests
-      run: sudo make test
+      run: make test
