@@ -23,8 +23,8 @@ jobs:
     - name: Display Roots Go Env
       run: sudo go env
 
-    - name: Install make
-      run: sudo apt-get install build-essential --assume-yes
+    - name: Install make and debootstrap
+      run: sudo apt-get install build-essential debootstrap --assume-yes
 
     - name: Build
       run: |
