@@ -12,6 +12,16 @@ jobs:
       uses: actions/setup-go@v2
       with:
         go-version: 1.17
+    
+    # MONITOR(cavcrosby): similar issue as it appears the ubuntu image includes a go binary:
+    # https://github.com/actions/setup-go/issues/104
+    - name: Set up Go for root
+      run: |
+        sudo ln --symbolic --force "$(command -v go)" "$(sudo --shell command -v go)"
+        sudo go version
+        
+    - name: Display Roots Go Env
+      run: sudo go env
 
     - name: Install make
       run: sudo apt-get install build-essential --assume-yes
