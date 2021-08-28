@@ -21,6 +21,9 @@ jobs:
         make setup
         make debcomprt
         make install
+        
+    - name: Find Roots Go Env
+      run: sudo go env
 
     - name: Run Unit/Integration Tests
       run: sudo make test
