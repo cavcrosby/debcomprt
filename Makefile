@@ -51,7 +51,7 @@ ${INSTALL}: ${TARGET_EXEC}
 >	${GOC} install
 
 .PHONY: ${TEST}
-${TEST}: ${TARGET_EXEC}
+${TEST}:
 >	sudo PATH="${PATH}" ${GOC} test -v
 
 .PHONY: ${CLEAN}
