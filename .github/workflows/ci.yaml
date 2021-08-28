@@ -23,7 +23,7 @@ jobs:
         make install
         
     - name: Find Roots Go Env
-      run: sudo go env
+      run: sudo --preserve-env go env
 
     - name: Run Unit/Integration Tests
       run: sudo make test
