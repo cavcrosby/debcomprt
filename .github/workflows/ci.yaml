@@ -17,6 +17,9 @@ jobs:
       run: |
         sudo ln --symbolic --force "$(command -v go)" "$(sudo --shell command -v go)"
         sudo go version
+        
+    - name: Display Roots Go Env
+      run: sudo go env
 
     - name: Install make
       run: sudo apt-get install build-essential --assume-yes
@@ -26,9 +29,6 @@ jobs:
         make setup
         make debcomprt
         make install
-        
-    - name: Find Roots Go Env
-      run: sudo go env
 
     - name: Run Unit/Integration Tests
-      run: sudo --preserve-env make test
+      run: sudo make test
