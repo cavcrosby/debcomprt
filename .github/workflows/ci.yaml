@@ -15,7 +15,7 @@ jobs:
         
     - name: Set up Go for root
       run: |
-        sudo ln --symbolic --force "$(command -v go)" "$(sudo command -v go)"
+        sudo ln --symbolic --force "$(command -v go)" "$(sudo --shell command -v go)"
         sudo go version
 
     - name: Install make
