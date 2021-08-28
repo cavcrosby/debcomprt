@@ -32,7 +32,6 @@ var defaultMirrorMappings = map[string]string{
 type cmdArgs struct {
 	passthrough            bool
 	quiet                  bool
-	useShellImplementation bool
 	helpFlagPassedIn       bool
 	comprtIncludesPath     string
 	comprtConfigPath       string
@@ -84,16 +83,6 @@ func stringInArr(strArg string, arr []string) bool {
 	return false
 }
 
-// Looks to see if the strings are in the string array.
-func stringsInArr(strArgs []string, arr []string) bool {
-	for _, value := range strArgs {
-		if stringInArr(value, arr) {
-			return true
-		}
-	}
-	return false
-}
-
 // getComprtIncludes reads in the comprt includes file and adds the
 // discovered packages into includePkgs.
 func getComprtIncludes(includePkgs *[]string, args *cmdArgs) error {
@@ -122,7 +111,6 @@ func getComprtIncludes(includePkgs *[]string, args *cmdArgs) error {
 // flag/flag arguments of interest into 'args'.
 func parseCmdArgs(args *cmdArgs) {
 	var localOsArgs []string = os.Args
-	var flagArg bool = false
 
 	// parses out flags to pass to debootstrap
 	for index, value := range localOsArgs {
@@ -130,22 +118,18 @@ func parseCmdArgs(args *cmdArgs) {
 			continue
 		} else if value == "--" {
 			break
-		} else if stringsInArr([]string{"-h", "-help", "--help"}, localOsArgs) {
+		} else if stringInArr(value, []string{"-h", "-help", "--help"}) {
 			args.helpFlagPassedIn = true
 		} else if stringInArr(value, []string{"-passthrough", "--passthrough"}) {
 			// index + 1 to ignoring iterating over passthrough flag
 			for passthroughIndex, passthroughValue := range localOsArgs[index+1:] {
 				if strings.HasPrefix(passthroughValue, "-") {
 					args.passThroughFlags = append(args.passThroughFlags, passthroughValue)
-					flagArg = true
-				} else if !flagArg {
+				} else {
 					// index + 1 to keep passthrough flag
 					// index + passthroughIndex + 1 to truncate final flag argument
 					localOsArgs = append(localOsArgs[:index+1], localOsArgs[index+passthroughIndex+1:]...)
 					break
-				} else {
-					args.passThroughFlags = append(args.passThroughFlags, passthroughValue)
-					flagArg = false
 				}
 			}
 			break
@@ -163,7 +147,7 @@ func parseCmdArgs(args *cmdArgs) {
 			&cli.BoolFlag{
 				Name:        "passthrough",
 				Value:       false,
-				Usage:       "passes the rest of the flag/flag arguments to debootstrap",
+				Usage:       "passes the rest of the flag/flag arguments to debootstrap (e.g. use --foo=bar format)",
 				Destination: &args.passthrough,
 			},
 			&cli.BoolFlag{
@@ -172,13 +156,6 @@ func parseCmdArgs(args *cmdArgs) {
 				Value:       false,
 				Usage:       "quiet (no output)",
 				Destination: &args.quiet,
-			},
-			&cli.BoolFlag{
-				Name:        "use-shell-implementation",
-				Aliases:     []string{"s"},
-				Value:       false,
-				Usage:       "uses the shell implemented debootstrap",
-				Destination: &args.useShellImplementation,
 			},
 			&cli.PathFlag{
 				Name:        "includes-path",
@@ -236,16 +213,12 @@ func main() {
 	args := &cmdArgs{ // sets defaults
 		passthrough:            false,
 		quiet:                  false,
-		useShellImplementation: false,
 		comprtIncludesPath:     filepath.Join(".", comprtIncludeFile),
 		comprtConfigPath:       filepath.Join(".", comprtConfigFile),
 	}
 	parseCmdArgs(args)
 
-	debootstrap = append(debootstrap, "cdebootstrap")
-	if args.useShellImplementation {
-		debootstrap[0] = "debootstrap"
-	}
+	debootstrap = append(debootstrap, "debootstrap")
 
 	if err := getComprtIncludes(&includePkgs, args); err != nil {
 		log.Fatal(err)
