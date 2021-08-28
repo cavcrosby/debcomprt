@@ -5,6 +5,7 @@
 # recursive variables
 TARGET_EXEC = debcomprt
 SHELL = /usr/bin/sh
+TEST_BIN_DIR = /usr/local/bin
 
 # executables
 GOC = go
@@ -13,7 +14,7 @@ executables = \
 
 # gnu install directory variables, for reference:
 # https://golang.org/doc/tutorial/compile-install
-prefix = $(shell ${GOC} list -f '{{.Target}}')
+prefix = $(shell if [ -n "${GOBIN}" ]; then echo "${GOBIN}"; else echo "${GOPATH}/bin"; fi)
 exec_prefix = ${prefix}
 bin_dir = ${exec_prefix}
 
@@ -42,7 +43,7 @@ ${TARGET_EXEC}: debcomprt.go
 >	${GOC} build -o "${TARGET_EXEC}"
 
 .PHONY: ${SETUP}
-${SETUP}: 
+${SETUP}:
 >	${GOC} mod download
 
 .PHONY: ${INSTALL}
@@ -51,7 +52,9 @@ ${INSTALL}: ${TARGET_EXEC}
 
 .PHONY: ${TEST}
 ${TEST}: ${TARGET_EXEC}
+>	if [ -z "$$(command -v ${TARGET_EXEC})" ]; then ln --symbolic --force "${CURDIR}/${TARGET_EXEC}" "${TEST_BIN_DIR}/${TARGET_EXEC}"; fi
 >	sudo ${GOC} test -v
+>	if [ -L "${TEST_BIN_DIR}/${TARGET_EXEC}" ]; then rm --force "${TEST_BIN_DIR}/${TARGET_EXEC}"; fi
 
 .PHONY: ${CLEAN}
 ${CLEAN}:
