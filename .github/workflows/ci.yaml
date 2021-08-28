@@ -12,7 +12,9 @@ jobs:
       uses: actions/setup-go@v2
       with:
         go-version: 1.17
-        
+    
+    # MONITOR(cavcrosby): similar issue as it appears the ubuntu image includes a go binary:
+    # https://github.com/actions/setup-go/issues/104
     - name: Set up Go for root
       run: |
         sudo ln --symbolic --force "$(command -v go)" "$(sudo --shell command -v go)"
