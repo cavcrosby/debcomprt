@@ -34,17 +34,12 @@ ${HELP}:
 	# inspired by the makefiles of the Linux kernel and Mercurial
 >	@echo 'Available make targets:'
 >	@echo '  ${TARGET_EXEC}          - the decomprt binary'
->	@echo '  ${SETUP}              - installs the go dependencies for this project'
 >	@echo '  ${INSTALL}            - installs the local decomprt binary (pathing: ${prefix})'
 >	@echo '  ${TEST}               - runs test suite for the project'
 >	@echo '  ${CLEAN}              - remove files created by other targets'
 
 ${TARGET_EXEC}: debcomprt.go
->	${GOC} build -o "${TARGET_EXEC}"
-
-.PHONY: ${SETUP}
-${SETUP}:
->	${GOC} mod download
+>	${GOC} build -o "${TARGET_EXEC}" -mod vendor
 
 .PHONY: ${INSTALL}
 ${INSTALL}: ${TARGET_EXEC}
@@ -52,7 +47,7 @@ ${INSTALL}: ${TARGET_EXEC}
 
 .PHONY: ${TEST}
 ${TEST}:
->	sudo PATH="${PATH}" ${GOC} test -v
+>	sudo PATH="${PATH}" ${GOC} test -v -mod vendor
 
 .PHONY: ${CLEAN}
 ${CLEAN}:
