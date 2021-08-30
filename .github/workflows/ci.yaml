@@ -61,5 +61,5 @@ jobs:
     
     - uses: actions/upload-artifact@v2
       with:
-        name: Project binary
+        name: debcomprt
         path: ./debcomprt
