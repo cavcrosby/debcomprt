@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -12,14 +13,20 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/cavcrosby/appdirs"
+	"github.com/go-git/go-git/v5"
 	"github.com/urfave/cli/v2"
 )
 
 const (
-	comprtConfigFile    = "comprtconfig"
-	comprtIncludeFile   = "comprtinc.txt"
-	defaultDebianMirror = "http://ftp.us.debian.org/debian/"
-	defaultUbuntuMirror = "http://archive.ubuntu.com/ubuntu/"
+	comprtConfigFile      = "comprtconfig"
+	comprtConfigsRepoName = "comprtconfigs"
+	comprtConfigsRepoUrl  = "https://github.com/cavcrosby/comprtconfigs"
+	comprtIncludeFile     = "comprtinc.txt"
+	defaultAlias          = "none"
+	defaultDebianMirror   = "http://ftp.us.debian.org/debian/"
+	defaultUbuntuMirror   = "http://archive.ubuntu.com/ubuntu/"
+	progname              = "debcomprt"
 )
 
 var defaultMirrorMappings = map[string]string{
@@ -30,15 +37,16 @@ var defaultMirrorMappings = map[string]string{
 
 // A type used to store command flag argument values and argument values.
 type cmdArgs struct {
-	passthrough            bool
-	quiet                  bool
-	helpFlagPassedIn       bool
-	comprtIncludesPath     string
-	comprtConfigPath       string
-	codeName               string
-	target                 string
-	mirror                 string
-	passThroughFlags       []string
+	passthrough        bool
+	quiet              bool
+	helpFlagPassedIn   bool
+	alias              string
+	comprtIncludesPath string
+	comprtConfigPath   string
+	codeName           string
+	target             string
+	mirror             string
+	passThroughFlags   []string
 }
 
 // A custom callback handler in the event improper cli
@@ -137,13 +145,20 @@ func parseCmdArgs(args *cmdArgs) {
 	}
 
 	app := &cli.App{
-		Name:            "debcomprt",
+		Name:            progname,
 		Usage:           "creates debian compartments, an undyling 'target' generated from debootstrap",
 		UsageText:       "debcomprt [global options] CODENAME TARGET [MIRROR]",
 		Description:     "[WARNING] this tool's cli is not fully POSIX compliant, so POSIX utility cli behavior may not always occur",
 		HideHelpCommand: true,
 		OnUsageError:    CustomOnUsageErrorFunc,
 		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:        "alias",
+				Aliases:     []string{"a"},
+				Value:       defaultAlias,
+				Usage:       fmt.Sprintf("use a particular comprt configuration from %v", comprtConfigsRepoUrl),
+				Destination: &args.alias,
+			},
 			&cli.BoolFlag{
 				Name:        "passthrough",
 				Value:       false,
@@ -211,12 +226,32 @@ func main() {
 	var includePkgs, debootstrap []string
 	var targetComprtConfigPath string = filepath.Join("/", comprtConfigFile)
 	args := &cmdArgs{ // sets defaults
-		passthrough:            false,
-		quiet:                  false,
-		comprtIncludesPath:     filepath.Join(".", comprtIncludeFile),
-		comprtConfigPath:       filepath.Join(".", comprtConfigFile),
+		passthrough:        false,
+		quiet:              false,
+		comprtIncludesPath: filepath.Join(".", comprtIncludeFile),
+		comprtConfigPath:   filepath.Join(".", comprtConfigFile),
 	}
 	parseCmdArgs(args)
+
+	siteDataDir := appdirs.SiteDataDir("", "", "")
+	progConfigDir := filepath.Join(siteDataDir, progname)
+	comprtConfigsRepoPath := filepath.Join(progConfigDir, comprtConfigsRepoName)
+
+	if args.alias != defaultAlias {
+		if _, err := os.Stat(progConfigDir); errors.Is(err, fs.ErrNotExist) {
+			os.MkdirAll(progConfigDir, fs.FileMode(0766))
+		}
+		if _, err := os.Stat(comprtConfigsRepoPath); errors.Is(err, fs.ErrNotExist) {
+			_, err := git.PlainClone(comprtConfigsRepoPath, false, &git.CloneOptions{
+				URL: comprtConfigsRepoUrl,
+			})
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		args.comprtConfigPath = filepath.Join(comprtConfigsRepoPath, args.alias, comprtConfigFile)
+		args.comprtIncludesPath = filepath.Join(comprtConfigsRepoPath, args.alias, args.comprtIncludesPath)
+	}
 
 	debootstrap = append(debootstrap, "debootstrap")
 
