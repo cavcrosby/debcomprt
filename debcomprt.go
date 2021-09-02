@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/cavcrosby/appdirs"
 	"github.com/go-git/go-git/v5"
@@ -49,6 +50,9 @@ type cmdArgs struct {
 	passThroughFlags   []string
 }
 
+var fileSystemsToBind []string = []string{"/sys", "/proc", "/dev", "/dev/pts"}
+var fileSystemsUnmountBacklog []string = []string{}
+
 // A custom callback handler in the event improper cli
 // flag/flag arguments/arguments are passed in.
 var CustomOnUsageErrorFunc cli.OnUsageErrorFunc = func(context *cli.Context, err error, isSubcommand bool) error {
@@ -79,6 +83,15 @@ func copy(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// string array/slice reverse function, inspired by:
+// https://stackoverflow.com/questions/28058278/how-do-i-reverse-a-slice-in-go
+func reverse(arr *[]string) {
+	for i, j := 0, len(*arr)-1; i < j; i, j = i+1, j-1 {
+		(*arr)[i], (*arr)[j] = (*arr)[j], (*arr)[i]
+	}
+	
 }
 
 // Looks to see if the string is in the string array.
@@ -112,6 +125,96 @@ func getComprtIncludes(includePkgs *[]string, args *cmdArgs) error {
 	if err := scanner.Err(); err != nil {
 		return err
 	}
+	return nil
+}
+
+func exitChroot(target, returnDir string, root *os.File) error {
+	if err := root.Chdir(); err != nil {
+		return err
+	}
+
+	if err := syscall.Chroot("."); err != nil {
+		return err
+	}
+
+	if err := os.Chdir(returnDir); err != nil {
+		return err
+	}
+
+	// Unfortunately unmounting filesystems is not as simple when working in code.
+	// It seems retrying to unmount the same filesystem previously attempted works
+	// after a short sleep. Ordering of the filesystems matter, for reference:
+	// https://unix.stackexchange.com/questions/61885/how-to-unmount-a-formerly-chrootd-filesystem#answer-234901
+	//
+	// MONITOR(cavcrosby): the syscall package is deprecated. At the time of writing, the replacement
+	// package for Unix systems is still not a stable version. So this will need to
+	// be revisited at some point. Also for reference: golang.org/x/sys
+	for _, fs := range fileSystemsToBind {
+		var retries int
+		for {
+				err := syscall.Unmount(filepath.Join(target, fs), 0x0)
+				if err == nil {
+					break
+				} else if retries == 1 {
+					fmt.Println(strings.Join([]string{progname, ": ", fs, " does not want to unmount, will try again later"}, ""))
+					fileSystemsUnmountBacklog = append(fileSystemsUnmountBacklog, fs)
+				} else if errors.Is(err, syscall.EBUSY) {
+					fmt.Println(strings.Join([]string{progname, ": ", fs, " is busy, trying again"}, ""))
+					retries += 1
+					time.Sleep(1 * time.Second)
+				} else if errors.Is(err, syscall.EINVAL) {
+					fmt.Println(strings.Join([]string{progname, ": ", fs, " is not a mount point...this may be an issue"}, ""))
+					break
+				} else {
+					fmt.Printf("%s: non-expected error thrown %d", progname, err)
+					return err
+				}
+				
+			}
+		}
+
+	// in the rare event that a filesystem is being stubborn to unmount
+	for _, fs := range fileSystemsUnmountBacklog {
+		var retries int
+		for {
+				err := syscall.Unmount(filepath.Join(target, fs), 0x0)
+				if err == nil {
+					break
+				} else if retries == 1 {
+					fmt.Println(strings.Join([]string{progname, ": ", fs, " does not want to unmount...AGAIN"}, ""))
+					fileSystemsUnmountBacklog = append(fileSystemsUnmountBacklog, fs)
+				} else if errors.Is(err, syscall.EBUSY) {
+					fmt.Println(strings.Join([]string{progname, ": ", fs, " is busy...AGAIN, trying again"}, ""))
+					retries += 1
+					time.Sleep(2 * time.Second)
+				} else if errors.Is(err, syscall.EINVAL) {
+					fmt.Println(strings.Join([]string{progname, ": ", fs, " is not a mount point...this may be an issue"}, ""))
+					break
+				} else {
+					fmt.Printf("%s: non-expected error thrown %d", progname, err)
+					return err
+				}
+			}
+		}
+						
+	return nil
+}
+
+func enterChroot(target string) error {
+	for _, fs := range fileSystemsToBind {
+		if err := syscall.Mount(fs, filepath.Join(target, fs), "", syscall.MS_BIND, ""); err != nil {
+			return err
+		}
+	}
+
+	if err := syscall.Chroot(target); err != nil {
+		return err
+	}
+
+	if err := syscall.Chdir("/"); err != nil { // makes sh happy, otherwise getcwd() for sh fails
+		return err
+	}
+
 	return nil
 }
 
@@ -290,11 +393,18 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := syscall.Chroot(args.target); err != nil {
+	previousDir, err := os.Getwd()
+	if err != nil {
 		log.Fatal(err)
 	}
 
-	if err := syscall.Chdir("/"); err != nil { // makes sh happy, otherwise getcwd() for sh fails
+	root, err := os.Open("/")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer root.Close()
+
+	if err := enterChroot(args.target); err != nil {
 		log.Fatal(err)
 	}
 
@@ -310,6 +420,12 @@ func main() {
 	}
 	if err := comprtConfigFileCmd.Wait(); err != nil {
 		log.Fatal(err)
+	}
+
+	reverse(&fileSystemsToBind)
+
+	if err := exitChroot(args.target, previousDir, root); err != nil {
+		log.Panic(err)
 	}
 
 	os.Exit(0)
