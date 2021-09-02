@@ -82,16 +82,15 @@ func copy(src, dst string) error {
 	return out.Close()
 }
 
-// String array/slice reverse function, inspired by:
+// Reverse the string array. Inspired by:
 // https://stackoverflow.com/questions/28058278/how-do-i-reverse-a-slice-in-go
 func reverse(arr *[]string) {
 	for i, j := 0, len(*arr)-1; i < j; i, j = i+1, j-1 {
 		(*arr)[i], (*arr)[j] = (*arr)[j], (*arr)[i]
 	}
-
 }
 
-// Looks to see if the string is in the string array.
+// Look to see if the string is in the string array.
 func stringInArr(strArg string, arr []string) bool {
 	for _, value := range arr {
 		if value == strArg {
@@ -101,8 +100,33 @@ func stringInArr(strArg string, arr []string) bool {
 	return false
 }
 
-// getComprtIncludes reads in the comprt includes file and adds the
-// discovered packages into includePkgs.
+// Get required extra data to be used by the program.
+func getProgData(args *cmdArgs) {
+	progDataDir := appdirs.SiteDataDir(progname, "", "")
+	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
+
+	if args.alias != defaultAlias {
+		_, err := os.Stat(progDataDir)
+		if errors.Is(err, fs.ErrNotExist) {
+			os.MkdirAll(progDataDir, fs.FileMode(0766))
+		} else if err != nil {
+			log.Panic(err)
+		}
+		if _, err := os.Stat(comprtConfigsRepoPath); errors.Is(err, fs.ErrNotExist) {
+			_, err := git.PlainClone(comprtConfigsRepoPath, false, &git.CloneOptions{
+				URL: comprtConfigsRepoUrl,
+			})
+			if err != nil {
+				log.Panic(err)
+			}
+		}
+		args.comprtConfigPath = filepath.Join(comprtConfigsRepoPath, args.alias, comprtConfigFile)
+		args.comprtIncludesPath = filepath.Join(comprtConfigsRepoPath, args.alias, args.comprtIncludesPath)
+	}
+}
+
+// Read in the comprt includes file and adds the discovered packages into
+// includePkgs.
 func getComprtIncludes(includePkgs *[]string, args *cmdArgs) error {
 	// inspired by:
 	// https://stackoverflow.com/questions/8757389/reading-a-file-line-by-line-in-go/16615559#16615559
@@ -125,7 +149,7 @@ func getComprtIncludes(includePkgs *[]string, args *cmdArgs) error {
 	return nil
 }
 
-// Chroot sets the current process's root dir to target. A function to exit out
+// Set the current process's root dir to target. A function to exit out
 // of the chroot will be returned.
 func Chroot(target string) (func(returnDir string, root *os.File) error, error) {
 	var fileSystemsToBind []string = []string{"/sys", "/proc", "/dev", "/dev/pts"}
@@ -218,8 +242,8 @@ func Chroot(target string) (func(returnDir string, root *os.File) error, error) 
 	}, nil
 }
 
-// parseCmdArgs interprets the command arguments passed in. Saving particular
-// flag/flag arguments of interest into 'args'.
+// Interprets the command arguments passed in. Saving particular flag/flag
+// arguments of interest into 'args'.
 func parseCmdArgs(args *cmdArgs) {
 	var localOsArgs []string = os.Args
 
@@ -335,26 +359,7 @@ func main() {
 		comprtConfigPath:   filepath.Join(".", comprtConfigFile),
 	}
 	parseCmdArgs(args)
-
-	siteDataDir := appdirs.SiteDataDir("", "", "")
-	progConfigDir := filepath.Join(siteDataDir, progname)
-	comprtConfigsRepoPath := filepath.Join(progConfigDir, comprtConfigsRepoName)
-
-	if args.alias != defaultAlias {
-		if _, err := os.Stat(progConfigDir); errors.Is(err, fs.ErrNotExist) {
-			os.MkdirAll(progConfigDir, fs.FileMode(0766))
-		}
-		if _, err := os.Stat(comprtConfigsRepoPath); errors.Is(err, fs.ErrNotExist) {
-			_, err := git.PlainClone(comprtConfigsRepoPath, false, &git.CloneOptions{
-				URL: comprtConfigsRepoUrl,
-			})
-			if err != nil {
-				log.Fatal(err)
-			}
-		}
-		args.comprtConfigPath = filepath.Join(comprtConfigsRepoPath, args.alias, comprtConfigFile)
-		args.comprtIncludesPath = filepath.Join(comprtConfigsRepoPath, args.alias, args.comprtIncludesPath)
-	}
+	getProgData(args)
 
 	debootstrap = append(debootstrap, "debootstrap")
 
