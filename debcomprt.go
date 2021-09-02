@@ -50,9 +50,6 @@ type cmdArgs struct {
 	passThroughFlags   []string
 }
 
-var fileSystemsToBind []string = []string{"/sys", "/proc", "/dev", "/dev/pts"}
-var fileSystemsUnmountBacklog []string = []string{}
-
 // A custom callback handler in the event improper cli
 // flag/flag arguments/arguments are passed in.
 var CustomOnUsageErrorFunc cli.OnUsageErrorFunc = func(context *cli.Context, err error, isSubcommand bool) error {
@@ -85,13 +82,13 @@ func copy(src, dst string) error {
 	return out.Close()
 }
 
-// string array/slice reverse function, inspired by:
+// String array/slice reverse function, inspired by:
 // https://stackoverflow.com/questions/28058278/how-do-i-reverse-a-slice-in-go
 func reverse(arr *[]string) {
 	for i, j := 0, len(*arr)-1; i < j; i, j = i+1, j-1 {
 		(*arr)[i], (*arr)[j] = (*arr)[j], (*arr)[i]
 	}
-	
+
 }
 
 // Looks to see if the string is in the string array.
@@ -128,30 +125,50 @@ func getComprtIncludes(includePkgs *[]string, args *cmdArgs) error {
 	return nil
 }
 
-func exitChroot(target, returnDir string, root *os.File) error {
-	if err := root.Chdir(); err != nil {
-		return err
-	}
-
-	if err := syscall.Chroot("."); err != nil {
-		return err
-	}
-
-	if err := os.Chdir(returnDir); err != nil {
-		return err
-	}
-
-	// Unfortunately unmounting filesystems is not as simple when working in code.
-	// It seems retrying to unmount the same filesystem previously attempted works
-	// after a short sleep. Ordering of the filesystems matter, for reference:
-	// https://unix.stackexchange.com/questions/61885/how-to-unmount-a-formerly-chrootd-filesystem#answer-234901
-	//
-	// MONITOR(cavcrosby): the syscall package is deprecated. At the time of writing, the replacement
-	// package for Unix systems is still not a stable version. So this will need to
-	// be revisited at some point. Also for reference: golang.org/x/sys
+// Chroot sets the current process's root dir to target. A function to exit out
+// of the chroot will be returned.
+func Chroot(target string) (func(returnDir string, root *os.File) error, error) {
+	var fileSystemsToBind []string = []string{"/sys", "/proc", "/dev", "/dev/pts"}
+	var fileSystemsUnmountBacklog []string = []string{}
 	for _, fs := range fileSystemsToBind {
-		var retries int
-		for {
+		if err := syscall.Mount(fs, filepath.Join(target, fs), "", syscall.MS_BIND, ""); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := syscall.Chroot(target); err != nil {
+		return nil, err
+	}
+
+	if err := syscall.Chdir("/"); err != nil { // makes sh happy, otherwise getcwd() for sh fails
+		return nil, err
+	}
+
+	return func(returnDir string, root *os.File) error {
+		if err := root.Chdir(); err != nil {
+			return err
+		}
+
+		if err := syscall.Chroot("."); err != nil {
+			return err
+		}
+
+		if err := os.Chdir(returnDir); err != nil {
+			return err
+		}
+
+		// Unfortunately unmounting filesystems is not as simple when working in code.
+		// It seems retrying to unmount the same filesystem previously attempted works
+		// after a short sleep. Ordering of the filesystems matter, for reference:
+		// https://unix.stackexchange.com/questions/61885/how-to-unmount-a-formerly-chrootd-filesystem#answer-234901
+		//
+		// MONITOR(cavcrosby): the syscall package is deprecated. At the time of writing, the replacement
+		// package for Unix systems is still not at a stable version. So this will need to
+		// be revisited at some point. Also for reference: golang.org/x/sys
+		reverse(&fileSystemsToBind)
+		for _, fs := range fileSystemsToBind {
+			var retries int
+			for {
 				err := syscall.Unmount(filepath.Join(target, fs), 0x0)
 				if err == nil {
 					break
@@ -169,14 +186,14 @@ func exitChroot(target, returnDir string, root *os.File) error {
 					fmt.Printf("%s: non-expected error thrown %d", progname, err)
 					return err
 				}
-				
+
 			}
 		}
 
-	// in the rare event that a filesystem is being stubborn to unmount
-	for _, fs := range fileSystemsUnmountBacklog {
-		var retries int
-		for {
+		// in the rare event that a filesystem is being stubborn to unmount
+		for _, fs := range fileSystemsUnmountBacklog {
+			var retries int
+			for {
 				err := syscall.Unmount(filepath.Join(target, fs), 0x0)
 				if err == nil {
 					break
@@ -196,26 +213,9 @@ func exitChroot(target, returnDir string, root *os.File) error {
 				}
 			}
 		}
-						
-	return nil
-}
 
-func enterChroot(target string) error {
-	for _, fs := range fileSystemsToBind {
-		if err := syscall.Mount(fs, filepath.Join(target, fs), "", syscall.MS_BIND, ""); err != nil {
-			return err
-		}
-	}
-
-	if err := syscall.Chroot(target); err != nil {
-		return err
-	}
-
-	if err := syscall.Chdir("/"); err != nil { // makes sh happy, otherwise getcwd() for sh fails
-		return err
-	}
-
-	return nil
+		return nil
+	}, nil
 }
 
 // parseCmdArgs interprets the command arguments passed in. Saving particular
@@ -404,7 +404,8 @@ func main() {
 	}
 	defer root.Close()
 
-	if err := enterChroot(args.target); err != nil {
+	exitChroot, err := Chroot(args.target)
+	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -422,9 +423,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	reverse(&fileSystemsToBind)
-
-	if err := exitChroot(args.target, previousDir, root); err != nil {
+	if err := exitChroot(previousDir, root); err != nil {
 		log.Panic(err)
 	}
 
