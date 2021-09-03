@@ -36,6 +36,14 @@ var defaultMirrorMappings = map[string]string{
 	"hirsute": defaultUbuntuMirror,
 }
 
+// A custom callback handler in the event improper cli
+// flag/flag arguments/arguments are passed in.
+var CustomOnUsageErrorFunc cli.OnUsageErrorFunc = func(context *cli.Context, err error, isSubcommand bool) error {
+	cli.ShowAppHelp(context)
+	log.Fatal(err)
+	return err
+}
+
 // A type used to store command flag argument values and argument values.
 type cmdArgs struct {
 	passthrough        bool
@@ -50,36 +58,135 @@ type cmdArgs struct {
 	passThroughFlags   []string
 }
 
-// A custom callback handler in the event improper cli
-// flag/flag arguments/arguments are passed in.
-var CustomOnUsageErrorFunc cli.OnUsageErrorFunc = func(context *cli.Context, err error, isSubcommand bool) error {
-	cli.ShowAppHelp(context)
-	log.Fatal(err)
-	return err
+// Interprets the command arguments passed in. Saving particular flag/flag
+// arguments of interest into 'cargs'.
+func (cargs *cmdArgs) parseCmdArgs() {
+	var localOsArgs []string = os.Args
+
+	// parses out flags to pass to debootstrap
+	for index, value := range localOsArgs {
+		if index < 1 {
+			continue
+		} else if value == "--" {
+			break
+		} else if stringInArr(value, []string{"-h", "-help", "--help"}) {
+			cargs.helpFlagPassedIn = true
+		} else if stringInArr(value, []string{"-passthrough", "--passthrough"}) {
+			// index + 1 to ignoring iterating over passthrough flag
+			for passthroughIndex, passthroughValue := range localOsArgs[index+1:] {
+				if strings.HasPrefix(passthroughValue, "-") {
+					cargs.passThroughFlags = append(cargs.passThroughFlags, passthroughValue)
+				} else {
+					// index + 1 to keep passthrough flag
+					// index + passthroughIndex + 1 to truncate final flag argument
+					localOsArgs = append(localOsArgs[:index+1], localOsArgs[index+passthroughIndex+1:]...)
+					break
+				}
+			}
+			break
+		}
+	}
+
+	app := &cli.App{
+		Name:            progname,
+		Usage:           "creates debian compartments, an undyling 'target' generated from debootstrap",
+		UsageText:       "debcomprt [global options] CODENAME TARGET [MIRROR]",
+		Description:     "[WARNING] this tool's cli is not fully POSIX compliant, so POSIX utility cli behavior may not always occur",
+		HideHelpCommand: true,
+		OnUsageError:    CustomOnUsageErrorFunc,
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:        "alias",
+				Aliases:     []string{"a"},
+				Value:       defaultAlias,
+				Usage:       fmt.Sprintf("use a particular comprt configuration from %v", comprtConfigsRepoUrl),
+				Destination: &cargs.alias,
+			},
+			&cli.BoolFlag{
+				Name:        "passthrough",
+				Value:       false,
+				Usage:       "passes the rest of the flag/flag arguments to debootstrap (e.g. use --foo=bar format)",
+				Destination: &cargs.passthrough,
+			},
+			&cli.BoolFlag{
+				Name:        "quiet",
+				Aliases:     []string{"q"},
+				Value:       false,
+				Usage:       "quiet (no output)",
+				Destination: &cargs.quiet,
+			},
+			&cli.PathFlag{
+				Name:        "includes-path",
+				Aliases:     []string{"i"},
+				Value:       cargs.comprtIncludesPath,
+				Usage:       "alternative path to comprt includes file",
+				Destination: &cargs.comprtIncludesPath,
+			},
+			&cli.PathFlag{
+				Name:        "config-path",
+				Aliases:     []string{"c"},
+				Value:       cargs.comprtConfigPath,
+				Usage:       "alternative path to comptr config file",
+				Destination: &cargs.comprtConfigPath,
+			},
+		},
+		Action: func(context *cli.Context) error {
+			if context.NArg() < 1 { // CODENAME
+				cli.ShowAppHelp(context)
+				log.Fatal(errors.New("CODENAME argument is required"))
+			}
+
+			if context.NArg() < 2 { // TARGET
+				cli.ShowAppHelp(context)
+				log.Fatal(errors.New("TARGET argument is required"))
+			} else if _, err := os.Stat(context.Args().Get(1)); errors.Is(err, fs.ErrNotExist) {
+				log.Fatal(err)
+			}
+
+			if context.NArg() < 3 { // MIRROR
+				if _, ok := defaultMirrorMappings[context.Args().Get(0)]; !ok {
+					log.Fatal(errors.New("no default MIRROR could be determined"))
+				}
+				cargs.mirror = defaultMirrorMappings[context.Args().Get(0)]
+			} else {
+				cargs.mirror = context.Args().Get(2)
+			}
+
+			cargs.codeName = context.Args().Get(0)
+			cargs.target = context.Args().Get(1)
+			return nil
+		},
+	}
+	app.Run(localOsArgs)
+	// Because for some reason github.com/urfave/cli/v2@v2.3.0 does not have a way to
+	// eject if a variant of 'help' is passed in!
+	if cargs.helpFlagPassedIn {
+		os.Exit(0)
+	}
 }
 
-// Copy the src file to dst. Any existing file will not be overwritten and will not
+// Copy the src file to dest. Any existing file will not be overwritten and will not
 // copy file attributes.
-func copy(src, dst string) error {
+func copy(src, dest string) error {
 	// inspired from:
 	// https://stackoverflow.com/questions/21060945/simple-way-to-copy-a-file#answer-21061062
-	in, err := os.Open(src)
+	srcFd, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer srcFd.Close()
 
-	out, err := os.OpenFile(dst, syscall.O_CREAT|syscall.O_EXCL|syscall.O_WRONLY, fs.FileMode(0777))
+	destFd, err := os.OpenFile(dest, syscall.O_CREAT|syscall.O_EXCL|syscall.O_WRONLY, fs.FileMode(0755))
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer destFd.Close()
 
-	_, err = io.Copy(out, in)
+	_, err = io.Copy(destFd, srcFd)
 	if err != nil {
 		return err
 	}
-	return out.Close()
+	return destFd.Close()
 }
 
 // Reverse the string array. Inspired by:
@@ -92,8 +199,8 @@ func reverse(arr *[]string) {
 
 // Look to see if the string is in the string array.
 func stringInArr(strArg string, arr []string) bool {
-	for _, value := range arr {
-		if value == strArg {
+	for _, val := range arr {
+		if val == strArg {
 			return true
 		}
 	}
@@ -101,11 +208,11 @@ func stringInArr(strArg string, arr []string) bool {
 }
 
 // Get required extra data to be used by the program.
-func getProgData(args *cmdArgs) {
+func getProgData(cargs *cmdArgs) {
 	progDataDir := appdirs.SiteDataDir(progname, "", "")
 	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
 
-	if args.alias != defaultAlias {
+	if cargs.alias != defaultAlias {
 		_, err := os.Stat(progDataDir)
 		if errors.Is(err, fs.ErrNotExist) {
 			os.MkdirAll(progDataDir, fs.FileMode(0766))
@@ -120,17 +227,17 @@ func getProgData(args *cmdArgs) {
 				log.Panic(err)
 			}
 		}
-		args.comprtConfigPath = filepath.Join(comprtConfigsRepoPath, args.alias, comprtConfigFile)
-		args.comprtIncludesPath = filepath.Join(comprtConfigsRepoPath, args.alias, args.comprtIncludesPath)
+		cargs.comprtConfigPath = filepath.Join(comprtConfigsRepoPath, cargs.alias, comprtConfigFile)
+		cargs.comprtIncludesPath = filepath.Join(comprtConfigsRepoPath, cargs.alias, cargs.comprtIncludesPath)
 	}
 }
 
 // Read in the comprt includes file and adds the discovered packages into
 // includePkgs.
-func getComprtIncludes(includePkgs *[]string, args *cmdArgs) error {
+func getComprtIncludes(includePkgs *[]string, cargs *cmdArgs) error {
 	// inspired by:
 	// https://stackoverflow.com/questions/8757389/reading-a-file-line-by-line-in-go/16615559#16615559
-	file, err := os.Open(args.comprtIncludesPath)
+	file, err := os.Open(cargs.comprtIncludesPath)
 	if err != nil {
 		// the comprt includes is optional
 		return nil
@@ -223,7 +330,7 @@ func Chroot(target string) (func(returnDir string, root *os.File) error, error) 
 					break
 				} else if retries == 1 {
 					fmt.Println(strings.Join([]string{progname, ": ", fs, " does not want to unmount...AGAIN"}, ""))
-					fileSystemsUnmountBacklog = append(fileSystemsUnmountBacklog, fs)
+					return fmt.Errorf("%s: unable to unmount %v", progname, fs)
 				} else if errors.Is(err, syscall.EBUSY) {
 					fmt.Println(strings.Join([]string{progname, ": ", fs, " is busy...AGAIN, trying again"}, ""))
 					retries += 1
@@ -242,153 +349,43 @@ func Chroot(target string) (func(returnDir string, root *os.File) error, error) 
 	}, nil
 }
 
-// Interprets the command arguments passed in. Saving particular flag/flag
-// arguments of interest into 'args'.
-func parseCmdArgs(args *cmdArgs) {
-	var localOsArgs []string = os.Args
-
-	// parses out flags to pass to debootstrap
-	for index, value := range localOsArgs {
-		if index < 1 {
-			continue
-		} else if value == "--" {
-			break
-		} else if stringInArr(value, []string{"-h", "-help", "--help"}) {
-			args.helpFlagPassedIn = true
-		} else if stringInArr(value, []string{"-passthrough", "--passthrough"}) {
-			// index + 1 to ignoring iterating over passthrough flag
-			for passthroughIndex, passthroughValue := range localOsArgs[index+1:] {
-				if strings.HasPrefix(passthroughValue, "-") {
-					args.passThroughFlags = append(args.passThroughFlags, passthroughValue)
-				} else {
-					// index + 1 to keep passthrough flag
-					// index + passthroughIndex + 1 to truncate final flag argument
-					localOsArgs = append(localOsArgs[:index+1], localOsArgs[index+passthroughIndex+1:]...)
-					break
-				}
-			}
-			break
-		}
-	}
-
-	app := &cli.App{
-		Name:            progname,
-		Usage:           "creates debian compartments, an undyling 'target' generated from debootstrap",
-		UsageText:       "debcomprt [global options] CODENAME TARGET [MIRROR]",
-		Description:     "[WARNING] this tool's cli is not fully POSIX compliant, so POSIX utility cli behavior may not always occur",
-		HideHelpCommand: true,
-		OnUsageError:    CustomOnUsageErrorFunc,
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:        "alias",
-				Aliases:     []string{"a"},
-				Value:       defaultAlias,
-				Usage:       fmt.Sprintf("use a particular comprt configuration from %v", comprtConfigsRepoUrl),
-				Destination: &args.alias,
-			},
-			&cli.BoolFlag{
-				Name:        "passthrough",
-				Value:       false,
-				Usage:       "passes the rest of the flag/flag arguments to debootstrap (e.g. use --foo=bar format)",
-				Destination: &args.passthrough,
-			},
-			&cli.BoolFlag{
-				Name:        "quiet",
-				Aliases:     []string{"q"},
-				Value:       false,
-				Usage:       "quiet (no output)",
-				Destination: &args.quiet,
-			},
-			&cli.PathFlag{
-				Name:        "includes-path",
-				Aliases:     []string{"i"},
-				Value:       args.comprtIncludesPath,
-				Usage:       "alternative path to comprt includes file",
-				Destination: &args.comprtIncludesPath,
-			},
-			&cli.PathFlag{
-				Name:        "config-path",
-				Aliases:     []string{"c"},
-				Value:       args.comprtConfigPath,
-				Usage:       "alternative path to comptr config file",
-				Destination: &args.comprtConfigPath,
-			},
-		},
-		Action: func(context *cli.Context) error {
-			if context.NArg() < 1 { // CODENAME
-				cli.ShowAppHelp(context)
-				log.Fatal(errors.New("CODENAME argument is required"))
-			}
-
-			if context.NArg() < 2 { // TARGET
-				cli.ShowAppHelp(context)
-				log.Fatal(errors.New("TARGET argument is required"))
-			} else if _, err := os.Stat(context.Args().Get(1)); errors.Is(err, fs.ErrNotExist) {
-				log.Fatal(err)
-			}
-
-			if context.NArg() < 3 { // MIRROR
-				if _, ok := defaultMirrorMappings[context.Args().Get(0)]; !ok {
-					log.Fatal(errors.New("no default MIRROR could be determined"))
-				}
-				args.mirror = defaultMirrorMappings[context.Args().Get(0)]
-			} else {
-				args.mirror = context.Args().Get(2)
-			}
-
-			args.codeName = context.Args().Get(0)
-			args.target = context.Args().Get(1)
-			return nil
-		},
-	}
-	app.Run(localOsArgs)
-	// Because for some reason github.com/urfave/cli/v2@v2.3.0 does not have a way to
-	// eject if a variant of 'help' is passed in!
-	if args.helpFlagPassedIn {
-		os.Exit(0)
-	}
-}
-
+// Start the main program execution.
 func main() {
-	var includePkgs, debootstrap []string
-	var targetComprtConfigPath string = filepath.Join("/", comprtConfigFile)
-	args := &cmdArgs{ // sets defaults
+	var includePkgs, debootstrapCmdArr []string
+	cargs := &cmdArgs{ // sets defaults
 		passthrough:        false,
 		quiet:              false,
 		comprtIncludesPath: filepath.Join(".", comprtIncludeFile),
 		comprtConfigPath:   filepath.Join(".", comprtConfigFile),
 	}
-	parseCmdArgs(args)
-	getProgData(args)
+	cargs.parseCmdArgs()
+	getProgData(cargs)
 
-	debootstrap = append(debootstrap, "debootstrap")
-
-	if err := getComprtIncludes(&includePkgs, args); err != nil {
-		log.Fatal(err)
-	}
-
-	if includePkgs != nil {
-		debootstrap = append(debootstrap, "--include="+strings.Join(includePkgs, ","))
-	}
-
-	if args.passThroughFlags != nil {
-		debootstrap = append(debootstrap, args.passThroughFlags...)
-	}
-
-	debootstrap = append(debootstrap, args.codeName, args.target, args.mirror)
-
-	debootstrapPath, err := exec.LookPath(debootstrap[0])
+	debootstrapPath, err := exec.LookPath("debootstrap")
 	if err != nil {
 		log.Fatal(err)
 	}
+	debootstrapCmdArr = append(debootstrapCmdArr, debootstrapPath)
 
-	if err := copy(args.comprtConfigPath, filepath.Join(args.target, targetComprtConfigPath)); err != nil {
+	if err := getComprtIncludes(&includePkgs, cargs); err != nil {
+		log.Fatal(err)
+	}
+	if includePkgs != nil {
+		debootstrapCmdArr = append(debootstrapCmdArr, "--include="+strings.Join(includePkgs, ","))
+	}
+	if cargs.passThroughFlags != nil {
+		debootstrapCmdArr = append(debootstrapCmdArr, cargs.passThroughFlags...)
+	}
+	// positional arguments
+	debootstrapCmdArr = append(debootstrapCmdArr, cargs.codeName, cargs.target, cargs.mirror)
+
+	if err := copy(cargs.comprtConfigPath, filepath.Join(cargs.target, comprtConfigFile)); err != nil {
 		log.Fatal(err)
 	}
 
 	// inspired by:
 	// https://stackoverflow.com/questions/39173430/how-to-print-the-realtime-output-of-running-child-process-in-go
-	debootstrapCmd := exec.Command(debootstrapPath, debootstrap[1:]...)
+	debootstrapCmd := exec.Command(debootstrapPath, debootstrapCmdArr[1:]...)
 	debootstrapCmd.Stdout = os.Stdout
 	debootstrapCmd.Stderr = os.Stderr
 	if err := debootstrapCmd.Start(); err != nil {
@@ -409,7 +406,7 @@ func main() {
 	}
 	defer root.Close()
 
-	exitChroot, err := Chroot(args.target)
+	exitChroot, err := Chroot(cargs.target)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -418,7 +415,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	comprtConfigFileCmd := exec.Command(shPath, targetComprtConfigPath)
+	comprtConfigFileCmd := exec.Command(shPath, filepath.Join("/", comprtConfigFile))
 	comprtConfigFileCmd.Stdout = os.Stdout
 	comprtConfigFileCmd.Stderr = os.Stderr
 	if err := comprtConfigFileCmd.Start(); err != nil {

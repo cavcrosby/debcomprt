@@ -34,13 +34,13 @@ func createTestFile(filePath, contents string) error {
 func TestCopy(t *testing.T) {
 	// inspired by:
 	// https://stackoverflow.com/questions/29505089/how-can-i-compare-two-files-in-golang#answer-29528747
-	var filePath1, filePath2, fileContents string
 	tempDirPath, err := ioutil.TempDir("", tempDir)
 	if err != nil {
 		t.Error(err)
 	}
 	defer os.RemoveAll(tempDirPath)
 
+	var filePath1, filePath2, fileContents string
 	fileContents = "hello\nthere!\n"
 	filePath1 = filepath.Join(tempDirPath, "foo")
 	filePath2 = filepath.Join(tempDirPath, "bar")
@@ -56,7 +56,6 @@ func TestCopy(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 	file2, err := ioutil.ReadFile(filePath2)
 	if err != nil {
 		t.Error(err)
@@ -68,7 +67,6 @@ func TestCopy(t *testing.T) {
 }
 
 func TestGetComprtIncludes(t *testing.T) {
-	var includePkgs []string
 	tempDirPath, err := ioutil.TempDir("", tempDir)
 	if err != nil {
 		t.Error(err)
@@ -76,28 +74,29 @@ func TestGetComprtIncludes(t *testing.T) {
 	defer os.RemoveAll(tempDirPath)
 
 	pkgsByteString := []byte(strings.Join(pkgs, "\n"))
-	args := &cmdArgs{
+	cargs := &cmdArgs{
 		comprtIncludesPath: filepath.Join(tempDirPath, comprtIncludeFile),
 		comprtConfigPath:   filepath.Join(tempDirPath, comprtConfigFile),
 	}
 
-	if err := createTestFile(args.comprtIncludesPath, strings.Join(pkgs, "\n")); err != nil {
+	if err := createTestFile(cargs.comprtIncludesPath, strings.Join(pkgs, "\n")); err != nil {
 		t.Error(err)
 	}
 
-	if getComprtIncludes(&includePkgs, args); !bytes.Equal([]byte(strings.Join(includePkgs, "\n")), pkgsByteString) {
+	var includePkgs []string
+	if getComprtIncludes(&includePkgs, cargs); !bytes.Equal([]byte(strings.Join(includePkgs, "\n")), pkgsByteString) {
 		t.Errorf("found the following packages \n%s", strings.Join(includePkgs, "\n"))
 	}
 }
 
 func TestIntegration(t *testing.T) {
-	var codename, target, chrootTestFilePath, comprtConfigFileContents string
 	tempDirPath, err := ioutil.TempDir(".", "_"+tempDir)
 	if err != nil {
 		t.Error(err)
 	}
 	defer os.RemoveAll(tempDirPath)
 
+	var codename, target, chrootTestFilePath, comprtConfigFileContents string
 	codename = "buster"
 	target = filepath.Join(tempDirPath, "testChroot")
 	chrootTestFilePath = filepath.Join("foo")
@@ -106,7 +105,7 @@ func TestIntegration(t *testing.T) {
 touch %s
 	`, chrootTestFilePath)
 
-	args := &cmdArgs{
+	cargs := &cmdArgs{
 		comprtIncludesPath: filepath.Join(tempDirPath, comprtIncludeFile),
 		comprtConfigPath:   filepath.Join(tempDirPath, comprtConfigFile),
 	}
@@ -118,14 +117,14 @@ touch %s
 	if err := os.Mkdir(target, fs.FileMode(0777)); err != nil {
 		t.Error(err)
 	}
-	if err := createTestFile(args.comprtIncludesPath, strings.Join(pkgs, "\n")); err != nil {
+	if err := createTestFile(cargs.comprtIncludesPath, strings.Join(pkgs, "\n")); err != nil {
 		t.Error(err)
 	}
-	if err := createTestFile(args.comprtConfigPath, comprtConfigFileContents); err != nil {
+	if err := createTestFile(cargs.comprtConfigPath, comprtConfigFileContents); err != nil {
 		t.Error(err)
 	}
 
-	debcomprtCmd := exec.Command("debcomprt", "--includes-path", args.comprtIncludesPath, "--config-path", args.comprtConfigPath, codename, target)
+	debcomprtCmd := exec.Command("debcomprt", "--includes-path", cargs.comprtIncludesPath, "--config-path", cargs.comprtConfigPath, codename, target)
 	if testing.Verbose() {
 		debcomprtCmd.Stdout = os.Stdout
 		debcomprtCmd.Stderr = os.Stderr
