@@ -9,9 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/cavcrosby/appdirs"
 )
 
 const (
@@ -28,6 +31,27 @@ func createTestFile(filePath, contents string) error {
 		return err
 	}
 
+	return nil
+}
+
+// Get a file's system status.
+func stat(filePath string, stat *syscall.Stat_t) error {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return err
+	}
+
+	// Could have also used https://pkg.go.dev/syscall#Stat but syscall is deprecated.
+	// MONITOR(cavcrosby): still means this implementation will need to be revisited.
+	//
+	// inspired by: https://stackoverflow.com/questions/28339240/get-file-inode-in-go
+	fileStat, ok := fileInfo.Sys().(*syscall.Stat_t)
+    if !ok {
+        return fmt.Errorf("Not a %v", reflect.TypeOf(stat))
+    }
+	// fileStat should not contain further pointers, though this may change depending
+	// on the implementation. For reference: https://pkg.go.dev/syscall#Stat_t
+	*stat = *fileStat
 	return nil
 }
 
@@ -66,6 +90,28 @@ func TestCopy(t *testing.T) {
 	}
 }
 
+func TestGetProgData(t *testing.T) {
+	progDataDir := appdirs.SiteDataDir(progname, "", "")
+	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
+
+	cargs := &cmdArgs{
+		alias: "altaria",
+	}
+
+	if err := getProgData(cargs); err != nil {
+		t.Error(err)
+	}
+	defer os.RemoveAll(progDataDir)
+
+	if _, err := os.Stat(progDataDir); errors.Is(err, fs.ErrNotExist) {
+		t.Error(err)
+	}
+	
+	if _, err := os.Stat(comprtConfigsRepoPath); errors.Is(err, fs.ErrNotExist) {
+		t.Error(err)
+	}
+}
+
 func TestGetComprtIncludes(t *testing.T) {
 	tempDirPath, err := ioutil.TempDir("", tempDir)
 	if err != nil {
@@ -75,8 +121,8 @@ func TestGetComprtIncludes(t *testing.T) {
 
 	pkgsByteString := []byte(strings.Join(pkgs, "\n"))
 	cargs := &cmdArgs{
-		comprtIncludesPath: filepath.Join(tempDirPath, comprtIncludeFile),
 		comprtConfigPath:   filepath.Join(tempDirPath, comprtConfigFile),
+		comprtIncludesPath: filepath.Join(tempDirPath, comprtIncludeFile),
 	}
 
 	if err := createTestFile(cargs.comprtIncludesPath, strings.Join(pkgs, "\n")); err != nil {
@@ -86,6 +132,57 @@ func TestGetComprtIncludes(t *testing.T) {
 	var includePkgs []string
 	if getComprtIncludes(&includePkgs, cargs); !bytes.Equal([]byte(strings.Join(includePkgs, "\n")), pkgsByteString) {
 		t.Errorf("found the following packages \n%s", strings.Join(includePkgs, "\n"))
+	}
+}
+
+func TestChroot(t *testing.T) {
+	// e.g. /tmp/${tempDir} on Unix systems
+	tempDirPath, err := ioutil.TempDir("", tempDir)
+	if err != nil {
+		// DISCUSS(cavcrosby): determine if t.Errors at any point should just exit the prog.
+		t.Error(err)
+	}
+	defer os.RemoveAll(tempDirPath)
+
+	root, err := os.Open("/")
+	if err != nil {
+		t.Error(err)
+	}
+	defer root.Close()
+
+	var parentRootStat *syscall.Stat_t = &syscall.Stat_t{}
+	parentStatErr := stat("/", parentRootStat)
+	if parentStatErr != nil {
+		t.Error(err)
+	}
+
+	exitChroot, err := Chroot(tempDirPath)
+	if err != nil {
+		t.Error(err)
+	}
+
+	var rootStat *syscall.Stat_t = &syscall.Stat_t{}
+	statErr := stat("/", rootStat)
+	if statErr != nil {
+		t.Error(err)
+	}
+
+	if rootStat.Ino == parentRootStat.Ino {
+		t.Error("was unable to chroot into target")
+	}
+
+	if err := exitChroot("/", root); err != nil {
+		t.Error(err)
+	}
+
+	var rootStat2 *syscall.Stat_t = &syscall.Stat_t{}
+	statErr2 := stat("/", rootStat2)
+	if statErr2 != nil {
+		t.Error(err)
+	}
+
+	if rootStat2.Ino != parentRootStat.Ino {
+		t.Error("was unable to exit chroot")
 	}
 }
 
@@ -106,8 +203,8 @@ touch %s
 	`, chrootTestFilePath)
 
 	cargs := &cmdArgs{
-		comprtIncludesPath: filepath.Join(tempDirPath, comprtIncludeFile),
 		comprtConfigPath:   filepath.Join(tempDirPath, comprtConfigFile),
+		comprtIncludesPath: filepath.Join(tempDirPath, comprtIncludeFile),
 	}
 
 	if testing.Short() {
