@@ -40,7 +40,7 @@ var defaultMirrorMappings = map[string]string{
 // flag/flag arguments/arguments are passed in.
 var CustomOnUsageErrorFunc cli.OnUsageErrorFunc = func(context *cli.Context, err error, isSubcommand bool) error {
 	cli.ShowAppHelp(context)
-	log.Fatal(err)
+	log.Panic(err)
 	return err
 }
 
@@ -64,22 +64,22 @@ func (cargs *cmdArgs) parseCmdArgs() {
 	var localOsArgs []string = os.Args
 
 	// parses out flags to pass to debootstrap
-	for index, value := range localOsArgs {
-		if index < 1 {
+	for i, val := range localOsArgs {
+		if i < 1 {
 			continue
-		} else if value == "--" {
+		} else if val == "--" {
 			break
-		} else if stringInArr(value, []string{"-h", "-help", "--help"}) {
+		} else if stringInArr(val, &[]string{"-h", "-help", "--help"}) {
 			cargs.helpFlagPassedIn = true
-		} else if stringInArr(value, []string{"-passthrough", "--passthrough"}) {
-			// index + 1 to ignoring iterating over passthrough flag
-			for passthroughIndex, passthroughValue := range localOsArgs[index+1:] {
+		} else if stringInArr(val, &[]string{"-passthrough", "--passthrough"}) {
+			// i + 1 to ignoring iterating over passthrough flag
+			for passthroughIndex, passthroughValue := range localOsArgs[i+1:] {
 				if strings.HasPrefix(passthroughValue, "-") {
 					cargs.passThroughFlags = append(cargs.passThroughFlags, passthroughValue)
 				} else {
-					// index + 1 to keep passthrough flag
-					// index + passthroughIndex + 1 to truncate final flag argument
-					localOsArgs = append(localOsArgs[:index+1], localOsArgs[index+passthroughIndex+1:]...)
+					// i + 1 to keep passthrough flag
+					// i + passthroughIndex + 1 to truncate final flag argument
+					localOsArgs = append(localOsArgs[:i+1], localOsArgs[i+passthroughIndex+1:]...)
 					break
 				}
 			}
@@ -133,19 +133,19 @@ func (cargs *cmdArgs) parseCmdArgs() {
 		Action: func(context *cli.Context) error {
 			if context.NArg() < 1 { // CODENAME
 				cli.ShowAppHelp(context)
-				log.Fatal(errors.New("CODENAME argument is required"))
+				log.Panic(errors.New("CODENAME argument is required"))
 			}
 
 			if context.NArg() < 2 { // TARGET
 				cli.ShowAppHelp(context)
-				log.Fatal(errors.New("TARGET argument is required"))
+				log.Panic(errors.New("TARGET argument is required"))
 			} else if _, err := os.Stat(context.Args().Get(1)); errors.Is(err, fs.ErrNotExist) {
-				log.Fatal(err)
+				log.Panic(err)
 			}
 
 			if context.NArg() < 3 { // MIRROR
 				if _, ok := defaultMirrorMappings[context.Args().Get(0)]; !ok {
-					log.Fatal(errors.New("no default MIRROR could be determined"))
+					log.Panic(errors.New("no default MIRROR could be determined"))
 				}
 				cargs.mirror = defaultMirrorMappings[context.Args().Get(0)]
 			} else {
@@ -198,8 +198,8 @@ func reverse(arr *[]string) {
 }
 
 // Look to see if the string is in the string array.
-func stringInArr(strArg string, arr []string) bool {
-	for _, val := range arr {
+func stringInArr(strArg string, arr *[]string) bool {
+	for _, val := range *arr {
 		if val == strArg {
 			return true
 		}
@@ -208,7 +208,7 @@ func stringInArr(strArg string, arr []string) bool {
 }
 
 // Get required extra data to be used by the program.
-func getProgData(cargs *cmdArgs) {
+func getProgData(cargs *cmdArgs) error {
 	progDataDir := appdirs.SiteDataDir(progname, "", "")
 	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
 
@@ -217,19 +217,20 @@ func getProgData(cargs *cmdArgs) {
 		if errors.Is(err, fs.ErrNotExist) {
 			os.MkdirAll(progDataDir, fs.FileMode(0766))
 		} else if err != nil {
-			log.Panic(err)
+			return err
 		}
 		if _, err := os.Stat(comprtConfigsRepoPath); errors.Is(err, fs.ErrNotExist) {
 			_, err := git.PlainClone(comprtConfigsRepoPath, false, &git.CloneOptions{
 				URL: comprtConfigsRepoUrl,
 			})
 			if err != nil {
-				log.Panic(err)
+				return err
 			}
 		}
 		cargs.comprtConfigPath = filepath.Join(comprtConfigsRepoPath, cargs.alias, comprtConfigFile)
 		cargs.comprtIncludesPath = filepath.Join(comprtConfigsRepoPath, cargs.alias, cargs.comprtIncludesPath)
 	}
+	return nil
 }
 
 // Read in the comprt includes file and adds the discovered packages into
@@ -359,16 +360,19 @@ func main() {
 		comprtConfigPath:   filepath.Join(".", comprtConfigFile),
 	}
 	cargs.parseCmdArgs()
-	getProgData(cargs)
+	
+	if err := getProgData(cargs); err != nil {
+		log.Panic(err)
+	}
 
 	debootstrapPath, err := exec.LookPath("debootstrap")
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 	debootstrapCmdArr = append(debootstrapCmdArr, debootstrapPath)
 
 	if err := getComprtIncludes(&includePkgs, cargs); err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 	if includePkgs != nil {
 		debootstrapCmdArr = append(debootstrapCmdArr, "--include="+strings.Join(includePkgs, ","))
@@ -380,7 +384,7 @@ func main() {
 	debootstrapCmdArr = append(debootstrapCmdArr, cargs.codeName, cargs.target, cargs.mirror)
 
 	if err := copy(cargs.comprtConfigPath, filepath.Join(cargs.target, comprtConfigFile)); err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	// inspired by:
@@ -389,40 +393,40 @@ func main() {
 	debootstrapCmd.Stdout = os.Stdout
 	debootstrapCmd.Stderr = os.Stderr
 	if err := debootstrapCmd.Start(); err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 	if err := debootstrapCmd.Wait(); err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	previousDir, err := os.Getwd()
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	root, err := os.Open("/")
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 	defer root.Close()
 
 	exitChroot, err := Chroot(cargs.target)
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	shPath, err := exec.LookPath("sh")
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 	comprtConfigFileCmd := exec.Command(shPath, filepath.Join("/", comprtConfigFile))
 	comprtConfigFileCmd.Stdout = os.Stdout
 	comprtConfigFileCmd.Stderr = os.Stderr
 	if err := comprtConfigFileCmd.Start(); err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 	if err := comprtConfigFileCmd.Wait(); err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	if err := exitChroot(previousDir, root); err != nil {
