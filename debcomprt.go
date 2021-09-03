@@ -46,16 +46,16 @@ var CustomOnUsageErrorFunc cli.OnUsageErrorFunc = func(context *cli.Context, err
 
 // A type used to store command flag argument values and argument values.
 type cmdArgs struct {
-	passthrough        bool
-	quiet              bool
-	helpFlagPassedIn   bool
 	alias              string
-	comprtIncludesPath string
-	comprtConfigPath   string
 	codeName           string
-	target             string
+	comprtConfigPath   string
+	comprtIncludesPath string
+	helpFlagPassedIn   bool
 	mirror             string
+	passthrough        bool
 	passThroughFlags   []string
+	quiet              bool
+	target             string
 }
 
 // Interprets the command arguments passed in. Saving particular flag/flag
@@ -259,11 +259,16 @@ func getComprtIncludes(includePkgs *[]string, cargs *cmdArgs) error {
 
 // Set the current process's root dir to target. A function to exit out
 // of the chroot will be returned.
-func Chroot(target string) (func(returnDir string, root *os.File) error, error) {
+func Chroot(target string) (func(returnDir string, parentRootFd *os.File) error, error) {
 	var fileSystemsToBind []string = []string{"/sys", "/proc", "/dev", "/dev/pts"}
 	var fileSystemsUnmountBacklog []string = []string{}
-	for _, fs := range fileSystemsToBind {
-		if err := syscall.Mount(fs, filepath.Join(target, fs), "", syscall.MS_BIND, ""); err != nil {
+	for _, filesys := range fileSystemsToBind {
+		mountPoint := filepath.Join(target, filesys)
+		if _, err := os.Stat(mountPoint); errors.Is(err, fs.ErrNotExist) {
+			// DISCUSS(cavcrosby): determine if FileMode(s) should differ for each mount.
+			os.Mkdir(mountPoint, fs.FileMode(0755))
+		}
+		if err := syscall.Mount(filesys, filepath.Join(target, filesys), "", syscall.MS_BIND, ""); err != nil {
 			return nil, err
 		}
 	}
@@ -298,21 +303,21 @@ func Chroot(target string) (func(returnDir string, root *os.File) error, error) 
 		// package for Unix systems is still not at a stable version. So this will need to
 		// be revisited at some point. Also for reference: golang.org/x/sys
 		reverse(&fileSystemsToBind)
-		for _, fs := range fileSystemsToBind {
+		for _, filesys := range fileSystemsToBind {
 			var retries int
 			for {
-				err := syscall.Unmount(filepath.Join(target, fs), 0x0)
+				err := syscall.Unmount(filepath.Join(target, filesys), 0x0)
 				if err == nil {
 					break
 				} else if retries == 1 {
-					fmt.Println(strings.Join([]string{progname, ": ", fs, " does not want to unmount, will try again later"}, ""))
-					fileSystemsUnmountBacklog = append(fileSystemsUnmountBacklog, fs)
+					fmt.Println(strings.Join([]string{progname, ": ", filesys, " does not want to unmount, will try again later"}, ""))
+					fileSystemsUnmountBacklog = append(fileSystemsUnmountBacklog, filesys)
 				} else if errors.Is(err, syscall.EBUSY) {
-					fmt.Println(strings.Join([]string{progname, ": ", fs, " is busy, trying again"}, ""))
+					fmt.Println(strings.Join([]string{progname, ": ", filesys, " is busy, trying again"}, ""))
 					retries += 1
 					time.Sleep(1 * time.Second)
 				} else if errors.Is(err, syscall.EINVAL) {
-					fmt.Println(strings.Join([]string{progname, ": ", fs, " is not a mount point...this may be an issue"}, ""))
+					fmt.Println(strings.Join([]string{progname, ": ", filesys, " is not a mount point...this may be an issue"}, ""))
 					break
 				} else {
 					fmt.Printf("%s: non-expected error thrown %d", progname, err)
@@ -323,21 +328,21 @@ func Chroot(target string) (func(returnDir string, root *os.File) error, error) 
 		}
 
 		// in the rare event that a filesystem is being stubborn to unmount
-		for _, fs := range fileSystemsUnmountBacklog {
+		for _, filesys := range fileSystemsUnmountBacklog {
 			var retries int
 			for {
-				err := syscall.Unmount(filepath.Join(target, fs), 0x0)
+				err := syscall.Unmount(filepath.Join(target, filesys), 0x0)
 				if err == nil {
 					break
 				} else if retries == 1 {
-					fmt.Println(strings.Join([]string{progname, ": ", fs, " does not want to unmount...AGAIN"}, ""))
-					return fmt.Errorf("%s: unable to unmount %v", progname, fs)
+					fmt.Println(strings.Join([]string{progname, ": ", filesys, " does not want to unmount...AGAIN"}, ""))
+					return fmt.Errorf("%s: unable to unmount %v", progname, filesys)
 				} else if errors.Is(err, syscall.EBUSY) {
-					fmt.Println(strings.Join([]string{progname, ": ", fs, " is busy...AGAIN, trying again"}, ""))
+					fmt.Println(strings.Join([]string{progname, ": ", filesys, " is busy...AGAIN, trying again"}, ""))
 					retries += 1
 					time.Sleep(2 * time.Second)
 				} else if errors.Is(err, syscall.EINVAL) {
-					fmt.Println(strings.Join([]string{progname, ": ", fs, " is not a mount point...this may be an issue"}, ""))
+					fmt.Println(strings.Join([]string{progname, ": ", filesys, " is not a mount point...this may be an issue"}, ""))
 					break
 				} else {
 					fmt.Printf("%s: non-expected error thrown %d", progname, err)
@@ -354,13 +359,13 @@ func Chroot(target string) (func(returnDir string, root *os.File) error, error) 
 func main() {
 	var includePkgs, debootstrapCmdArr []string
 	cargs := &cmdArgs{ // sets defaults
+		comprtConfigPath:   filepath.Join(".", comprtConfigFile),
+		comprtIncludesPath: filepath.Join(".", comprtIncludeFile),
 		passthrough:        false,
 		quiet:              false,
-		comprtIncludesPath: filepath.Join(".", comprtIncludeFile),
-		comprtConfigPath:   filepath.Join(".", comprtConfigFile),
 	}
 	cargs.parseCmdArgs()
-	
+
 	if err := getProgData(cargs); err != nil {
 		log.Panic(err)
 	}
