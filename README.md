@@ -1,0 +1,5 @@
+# debcomprt
+
+## License
+
+See LICENSE.
