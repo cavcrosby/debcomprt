@@ -8,9 +8,9 @@ SHELL = /usr/bin/sh
 TEST_BIN_DIR = /usr/local/bin
 
 # executables
-GOC = go
+GO = go
 executables = \
-	${GOC}
+	${GO}
 
 # gnu install directory variables, for reference:
 # https://golang.org/doc/tutorial/compile-install
@@ -39,15 +39,15 @@ ${HELP}:
 >	@echo '  ${CLEAN}              - remove files created by other targets'
 
 ${TARGET_EXEC}: debcomprt.go
->	${GOC} build -o "${TARGET_EXEC}" -mod vendor
+>	${GO} build -o "${TARGET_EXEC}" -mod vendor
 
 .PHONY: ${INSTALL}
 ${INSTALL}: ${TARGET_EXEC}
->	${GOC} install
+>	${GO} install
 
 .PHONY: ${TEST}
 ${TEST}:
->	sudo PATH="${PATH}" ${GOC} test -v -mod vendor
+>	sudo PATH="${PATH}" ${GO} test -v -mod vendor
 
 .PHONY: ${CLEAN}
 ${CLEAN}:
