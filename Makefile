@@ -13,6 +13,10 @@ ADDLICENSE = addlicense
 executables = \
 	${GO}
 
+# tools, inspired by:
+# https://stackoverflow.com/questions/56636580/replace-retool-with-tools-go-for-multi-developer-and-ci-environments-using-go-mo#answer-56640587
+GO_TOOLS = github.com/google/addlicense
+
 # gnu install directory variables, for reference:
 # https://golang.org/doc/tutorial/compile-install
 prefix = $(shell if [ -n "${GOBIN}" ]; then echo "${GOBIN}"; else echo "${GOPATH}/bin"; fi)
@@ -23,7 +27,9 @@ bin_dir = ${exec_prefix}
 HELP = help
 SETUP = setup
 INSTALL = install
+INSTALL_TOOLS = install-tools
 TEST = test
+ADD_LICENSE = add-license
 CLEAN = clean
 
 # to be passed in at make runtime
@@ -42,8 +48,9 @@ ${HELP}:
 >	@echo 'Available make targets:'
 >	@echo '  ${TARGET_EXEC}          - the decomprt binary'
 >	@echo '  ${INSTALL}            - installs the local decomprt binary (pathing: ${prefix})'
+>	@echo '  ${INSTALL_TOOLS}      - installs the development tools used for the project'
 >	@echo '  ${TEST}               - runs test suite for the project'
->	@echo '  ${ADDLICENSE}         - adds license header to src files'
+>	@echo '  ${ADD_LICENSE}        - adds license header to src files'
 >	@echo '  ${CLEAN}              - remove files created by other targets'
 >	@echo 'Public make configurations (e.g. make [config]=1 [targets]):'
 >	@echo '  COPYRIGHT_HOLDERS     - string denoting copyright holders/authors'
@@ -56,20 +63,18 @@ ${TARGET_EXEC}: debcomprt.go
 ${INSTALL}: ${TARGET_EXEC}
 >	${GO} install
 
+.PHONY: ${INSTALL_TOOLS}
+${INSTALL_TOOLS}:
+>	${GO} install -mod vendor ${GO_TOOLS}
+
 .PHONY: ${TEST}
 ${TEST}:
 >	sudo PATH="${PATH}" ${GO} test -v -mod vendor
 
-# for reference: https://github.com/google/addlicense
-.PHONY: ${ADDLICENSE}
-${ADDLICENSE}:
-	# DISCUSS(cavcrosby): this is only a tool used when doing development on this
-	# go module. That, and the tool is written in golang. Probably do not want to
-	# vendorize the code for the tool, but perhaps we could specify a different file
-	# for dependencies that are tools.
->	@[ -z $$(command -v "${ADDLICENSE}") ] || { echo "No ${ADDLICENSE} in PATH"; exit 1; }
+.PHONY: ${ADD_LICENSE}
+${ADD_LICENSE}:
 >	@[ -n "${COPYRIGHT_HOLDERS}" ] || { echo "COPYRIGHT_HOLDERS was not passed into make"; exit 1; }
->	addlicense -l apache -c "${COPYRIGHT_HOLDERS}" ${src}
+>	${ADDLICENSE} -l apache -c "${COPYRIGHT_HOLDERS}" ${src}
 
 .PHONY: ${CLEAN}
 ${CLEAN}:

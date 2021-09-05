@@ -60,9 +60,9 @@ func stat(filePath string, stat *syscall.Stat_t) error {
 	//
 	// inspired by: https://stackoverflow.com/questions/28339240/get-file-inode-in-go
 	fileStat, ok := fileInfo.Sys().(*syscall.Stat_t)
-    if !ok {
-        return fmt.Errorf("Not a %v", reflect.TypeOf(stat))
-    }
+	if !ok {
+		return fmt.Errorf("Not a %v", reflect.TypeOf(stat))
+	}
 	// fileStat should not contain further pointers, though this may change depending
 	// on the implementation. For reference: https://pkg.go.dev/syscall#Stat_t
 	*stat = *fileStat
@@ -120,7 +120,7 @@ func TestGetProgData(t *testing.T) {
 	if _, err := os.Stat(progDataDir); errors.Is(err, fs.ErrNotExist) {
 		t.Error(err)
 	}
-	
+
 	if _, err := os.Stat(comprtConfigsRepoPath); errors.Is(err, fs.ErrNotExist) {
 		t.Error(err)
 	}
