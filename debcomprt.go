@@ -260,7 +260,6 @@ func getComprtIncludes(includePkgs *[]string, cargs *cmdArgs) error {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-	// optionally, resize scanner's capacity for lines over 64K, see next example
 	for scanner.Scan() {
 		*includePkgs = append(*includePkgs, scanner.Text())
 	}
