@@ -36,7 +36,7 @@ CLEAN = clean
 COPYRIGHT_HOLDERS =
 
 # simply expanded variables
-src := $(shell find . \( -type f \) -and \( -iname '*.go' \) -and \( -not -iregex './vendor.*' \))
+src := $(shell find . \( -type f \) -and \( -iname '*.go' \) -and \( -not -iregex '.*/vendor.*' \))
 
 # inspired from:
 # https://stackoverflow.com/questions/5618615/check-if-a-program-exists-from-a-makefile#answer-25668869
