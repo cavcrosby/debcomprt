@@ -24,6 +24,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -38,10 +40,40 @@ const (
 	comprtConfigsRepoName = "comprtconfigs"
 	comprtConfigsRepoUrl  = "https://github.com/cavcrosby/comprtconfigs"
 	comprtIncludeFile     = "comprtinc.txt"
-	defaultAlias          = "none"
 	defaultDebianMirror   = "http://ftp.us.debian.org/debian/"
 	defaultUbuntuMirror   = "http://archive.ubuntu.com/ubuntu/"
+	noAlias               = "none"
 	progname              = "debcomprt"
+)
+
+// inspired by:
+// https://stackoverflow.com/questions/28969455/how-to-properly-instantiate-os-filemode
+const (
+	OS_READ        = 04
+	OS_WRITE       = 02
+	OS_EX          = 01
+	OS_USER_SHIFT  = 6
+	OS_GROUP_SHIFT = 3
+	OS_OTH_SHIFT   = 0
+	OS_USER_R      = OS_READ << OS_USER_SHIFT
+	OS_USER_W      = OS_WRITE << OS_USER_SHIFT
+	OS_USER_X      = OS_EX << OS_USER_SHIFT
+	OS_USER_RW     = OS_USER_R | OS_USER_W
+	OS_USER_RWX    = OS_USER_RW | OS_USER_X
+	OS_GROUP_R     = OS_READ << OS_GROUP_SHIFT
+	OS_GROUP_W     = OS_WRITE << OS_GROUP_SHIFT
+	OS_GROUP_X     = OS_EX << OS_GROUP_SHIFT
+	OS_GROUP_RW    = OS_GROUP_R | OS_GROUP_W
+	OS_GROUP_RWX   = OS_GROUP_RW | OS_GROUP_X
+	OS_OTH_R       = OS_READ << OS_OTH_SHIFT
+	OS_OTH_W       = OS_WRITE << OS_OTH_SHIFT
+	OS_OTH_X       = OS_EX << OS_OTH_SHIFT
+	OS_OTH_RW      = OS_OTH_R | OS_OTH_W
+	OS_OTH_RWX     = OS_OTH_RW | OS_OTH_X
+)
+
+var (
+	reFindEnvVar = regexp.MustCompile(`(?P<name>^[a-zA-Z_]\w*)=(?P<value>.+)`)
 )
 
 var defaultMirrorMappings = map[string]string{
@@ -68,6 +100,7 @@ type cmdArgs struct {
 	mirror             string
 	passthrough        bool
 	passThroughFlags   []string
+	preprocessAliases  bool
 	quiet              bool
 	target             string
 }
@@ -98,6 +131,18 @@ func (cargs *cmdArgs) parseCmdArgs() {
 				}
 			}
 			break
+		} else if stringInArr(val, &[]string{"-e", "-alias-envvar", "--alias-envvar"}) {
+			var envVar string = localOsArgs[i+1]
+
+			if reFindEnvVar.FindStringIndex(envVar) == nil {
+				log.Panic(errors.New("an env var was not properly formatted"))
+			}
+			envVarArr := reFindEnvVar.FindStringSubmatch(envVar)
+			envVarName, envVarValue := envVarArr[1], envVarArr[2]
+			os.Setenv(envVarName, envVarValue)
+			// i + 1 to keep alias-envvar flag
+			// i + 2 only to truncate the flag's argument
+			localOsArgs = append(localOsArgs[:i+1], localOsArgs[i+2:]...)
 		}
 	}
 
@@ -112,14 +157,20 @@ func (cargs *cmdArgs) parseCmdArgs() {
 			&cli.StringFlag{
 				Name:        "alias",
 				Aliases:     []string{"a"},
-				Value:       defaultAlias,
+				Value:       noAlias,
 				Usage:       fmt.Sprintf("use a particular comprt configuration from %v", comprtConfigsRepoUrl),
 				Destination: &cargs.alias,
 			},
 			&cli.BoolFlag{
+				Name:        "alias-envvar",
+				Aliases:     []string{"e"},
+				Usage:       "preprocess all the aliases files by evaluating these env vars (ex. <flag> foo=bar <flag> bar=baz)",
+				Destination: &cargs.preprocessAliases,
+			},
+			&cli.BoolFlag{
 				Name:        "passthrough",
 				Value:       false,
-				Usage:       "passes the rest of the flag/flag arguments to debootstrap (e.g. use --foo=bar format)",
+				Usage:       "pass the rest of the flag/flag arguments to debootstrap (e.g. use --foo=bar flag format)",
 				Destination: &cargs.passthrough,
 			},
 			&cli.BoolFlag{
@@ -133,14 +184,14 @@ func (cargs *cmdArgs) parseCmdArgs() {
 				Name:        "includes-path",
 				Aliases:     []string{"i"},
 				Value:       cargs.comprtIncludesPath,
-				Usage:       "alternative path to comprt includes file",
+				Usage:       "alternative `PATH` to comprt includes file",
 				Destination: &cargs.comprtIncludesPath,
 			},
 			&cli.PathFlag{
 				Name:        "config-path",
 				Aliases:     []string{"c"},
 				Value:       cargs.comprtConfigPath,
-				Usage:       "alternative path to comptr config file",
+				Usage:       "alternative `PATH` to comptr config file",
 				Destination: &cargs.comprtConfigPath,
 			},
 		},
@@ -171,6 +222,7 @@ func (cargs *cmdArgs) parseCmdArgs() {
 			return nil
 		},
 	}
+	sort.Sort(cli.FlagsByName(app.Flags))
 	app.Run(localOsArgs)
 	// Because for some reason github.com/urfave/cli/v2@v2.3.0 does not have a way to
 	// eject if a variant of 'help' is passed in!
@@ -226,10 +278,10 @@ func getProgData(cargs *cmdArgs) error {
 	progDataDir := appdirs.SiteDataDir(progname, "", "")
 	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
 
-	if cargs.alias != defaultAlias {
+	if cargs.alias != noAlias {
 		_, err := os.Stat(progDataDir)
 		if errors.Is(err, fs.ErrNotExist) {
-			os.MkdirAll(progDataDir, fs.FileMode(0766))
+			os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
 		} else if err != nil {
 			return err
 		}
@@ -239,6 +291,28 @@ func getProgData(cargs *cmdArgs) error {
 			})
 			if err != nil {
 				return err
+			}
+		} else {
+			var pullOpts git.PullOptions = git.PullOptions{RemoteName: "origin"}
+			comprtRepo, err := git.PlainOpen(comprtConfigsRepoPath)
+			if err != nil {
+				return err
+			}
+			gitWorkingDir, err := comprtRepo.Worktree()
+			if err != nil {
+				return err
+			}
+			gitWorkingDir.Pull(&pullOpts)
+		}
+		if cargs.preprocessAliases {
+			makePath, err := exec.LookPath("make")
+			if err != nil {
+				log.Panic(err)
+			}
+			makeCmd := exec.Command(makePath, "PREPROCESS_ALIASES=1", cargs.alias)
+			makeCmd.Dir = comprtConfigsRepoPath
+			if _, err := makeCmd.Output(); err != nil {
+				log.Panic(err)
 			}
 		}
 		cargs.comprtConfigPath = filepath.Join(comprtConfigsRepoPath, cargs.alias, comprtConfigFile)
@@ -387,7 +461,7 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	debootstrapCmdArr = append(debootstrapCmdArr, debootstrapPath)
+	debootstrapCmdArr = append([]string{debootstrapPath}, debootstrapCmdArr...)
 
 	if err := getComprtIncludes(&includePkgs, cargs); err != nil {
 		log.Panic(err)

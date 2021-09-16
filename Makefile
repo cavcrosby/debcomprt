@@ -53,8 +53,8 @@ ${HELP}:
 >	@echo '  ${ADD_LICENSE}        - adds license header to src files'
 >	@echo '  ${CLEAN}              - remove files created by other targets'
 >	@echo 'Public make configurations (e.g. make [config]=1 [targets]):'
->	@echo '  COPYRIGHT_HOLDERS     - string denoting copyright holders/authors'
->	@echo '                          (e.g. John Smith, Alice Smith)'
+>	@echo '  COPYRIGHT_HOLDERS     - string denoting copyright holder(s)/author(s)'
+>	@echo '                          (e.g. "John Smith, Alice Smith" or "John Smith")'
 
 ${TARGET_EXEC}: debcomprt.go
 >	${GO} build -o "${TARGET_EXEC}" -mod vendor
