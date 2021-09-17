@@ -78,7 +78,7 @@ func TestCopy(t *testing.T) {
 	// https://stackoverflow.com/questions/29505089/how-can-i-compare-two-files-in-golang#answer-29528747
 	tempDirPath, err := ioutil.TempDir("", tempDir)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	defer os.RemoveAll(tempDirPath)
 
@@ -88,23 +88,52 @@ func TestCopy(t *testing.T) {
 	filePath2 = filepath.Join(tempDirPath, "bar")
 
 	if err := createTestFile(filePath1, fileContents); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	if err := copy(filePath1, filePath2); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	file1, err := ioutil.ReadFile(filePath1)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	file2, err := ioutil.ReadFile(filePath2)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	if !bytes.Equal(file1, file2) {
-		t.Errorf("%s is not the same as %s", filePath1, filePath2)
+		t.Fatalf("%s is not the same as %s", filePath1, filePath2)
+	}
+}
+
+func TestCopyDestAlreadyExists(t *testing.T) {
+	tempDirPath, err := ioutil.TempDir("", tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDirPath)
+
+	var filePath1, filePath2, fileContents string
+	fileContents = "hello\nthere!\n"
+	filePath1 = filepath.Join(tempDirPath, "foo")
+	filePath2 = filepath.Join(tempDirPath, "bar")
+
+	if err := createTestFile(filePath1, fileContents); err != nil {
+		t.Fatal(err)
+	}
+	if err := copy(filePath1, filePath2); err != nil {
+		t.Fatal(err)
+	}
+
+	errors.Is(err, syscall.EBUSY)
+	copyErr := copy(filePath1, filePath2)
+	if copyErr == nil {
+		t.Fatal("dest was overwritten with second call to copy!")
+	}
+	if !errors.Is(copyErr, syscall.EEXIST) {
+		t.Fatalf("a non-expected error has occurred: %d", copyErr)
 	}
 }
 
@@ -117,23 +146,23 @@ func TestGetProgData(t *testing.T) {
 	}
 
 	if err := getProgData(cargs); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	defer os.RemoveAll(progDataDir)
 
 	if _, err := os.Stat(progDataDir); errors.Is(err, fs.ErrNotExist) {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	if _, err := os.Stat(comprtConfigsRepoPath); errors.Is(err, fs.ErrNotExist) {
-		t.Error(err)
+		t.Fatal(err)
 	}
 }
 
 func TestGetComprtIncludes(t *testing.T) {
 	tempDirPath, err := ioutil.TempDir("", "_"+tempDir)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	defer os.RemoveAll(tempDirPath)
 
@@ -144,12 +173,12 @@ func TestGetComprtIncludes(t *testing.T) {
 	}
 
 	if err := createTestFile(cargs.comprtIncludesPath, strings.Join(pkgs, "\n")); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	var includePkgs []string
 	if getComprtIncludes(&includePkgs, cargs); !bytes.Equal([]byte(strings.Join(includePkgs, "\n")), pkgsByteString) {
-		t.Errorf("found the following packages \n%s", strings.Join(includePkgs, "\n"))
+		t.Fatalf("found the following packages \n%s", strings.Join(includePkgs, "\n"))
 	}
 }
 
@@ -157,50 +186,49 @@ func TestChroot(t *testing.T) {
 	// e.g. /tmp/${tempDir} on Unix systems
 	tempDirPath, err := ioutil.TempDir("", "_"+tempDir)
 	if err != nil {
-		// DISCUSS(cavcrosby): determine if t.Errors at any point should just exit the prog.
-		t.Error(err)
+		t.Fatal(err)
 	}
 	defer os.RemoveAll(tempDirPath)
 
 	root, err := os.Open("/")
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	defer root.Close()
 
 	var parentRootStat *syscall.Stat_t = &syscall.Stat_t{}
 	parentStatErr := stat("/", parentRootStat)
 	if parentStatErr != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	exitChroot, err := Chroot(tempDirPath)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	var rootStat *syscall.Stat_t = &syscall.Stat_t{}
 	statErr := stat("/", rootStat)
 	if statErr != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	if rootStat.Ino == parentRootStat.Ino {
-		t.Error("was unable to chroot into target")
+		t.Fatal("was unable to chroot into target")
 	}
 
 	if err := exitChroot("/", root); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	var rootStat2 *syscall.Stat_t = &syscall.Stat_t{}
 	statErr2 := stat("/", rootStat2)
 	if statErr2 != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	if rootStat2.Ino != parentRootStat.Ino {
-		t.Error("was unable to exit chroot")
+		t.Fatal("was unable to exit chroot")
 	}
 }
 
@@ -210,12 +238,12 @@ func TestIntegration(t *testing.T) {
 	if errors.Is(err, fs.ErrNotExist) {
 		os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
 	} else if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	tempDirPath, err := os.MkdirTemp(progDataDir, "_"+tempDir)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	defer os.RemoveAll(tempDirPath)
 
@@ -242,14 +270,14 @@ touch %s
 		os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
 	)
 	if mkTargetErr != nil {
-		t.Error(mkTargetErr)
+		t.Fatal(mkTargetErr)
 	}
 
 	if err := createTestFile(cargs.comprtIncludesPath, strings.Join(pkgs, "\n")); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	if err := createTestFile(cargs.comprtConfigPath, comprtConfigFileContents); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	debcomprtCmd := exec.Command("debcomprt", "--includes-path", cargs.comprtIncludesPath, "--config-path", cargs.comprtConfigPath, codename, target)
@@ -258,10 +286,10 @@ touch %s
 		debcomprtCmd.Stderr = os.Stderr
 	}
 	if err := debcomprtCmd.Start(); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	if err := debcomprtCmd.Wait(); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	// returning back to the residing directory before entering the chroot,
@@ -269,23 +297,22 @@ touch %s
 	// https://devsidestory.com/exit-from-a-chroot-with-golang/
 	pwd, err := os.Getwd()
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	fdPwd, err := os.Open(pwd)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	defer fdPwd.Close()
 
-	// runs checks on test chroot env
 	if err := syscall.Chroot(target); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	if err := syscall.Chdir("/"); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	if _, err := os.Stat(chrootTestFilePath); errors.Is(err, fs.ErrNotExist) {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	for _, pkg := range pkgs {
@@ -305,6 +332,6 @@ touch %s
 
 	fdPwd.Chdir()
 	if err := syscall.Chroot("."); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 }
