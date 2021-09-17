@@ -49,6 +49,7 @@ const (
 // inspired by:
 // https://stackoverflow.com/questions/28969455/how-to-properly-instantiate-os-filemode
 const (
+	ModeFile       = 0x0
 	OS_READ        = 04
 	OS_WRITE       = 02
 	OS_EX          = 01
@@ -222,6 +223,7 @@ func (cargs *cmdArgs) parseCmdArgs() {
 			return nil
 		},
 	}
+
 	sort.Sort(cli.FlagsByName(app.Flags))
 	app.Run(localOsArgs)
 	// Because for some reason github.com/urfave/cli/v2@v2.3.0 does not have a way to
@@ -242,7 +244,11 @@ func copy(src, dest string) error {
 	}
 	defer srcFd.Close()
 
-	destFd, err := os.OpenFile(dest, syscall.O_CREAT|syscall.O_EXCL|syscall.O_WRONLY, fs.FileMode(0755))
+	destFd, err := os.OpenFile(
+		dest,
+		syscall.O_CREAT|syscall.O_EXCL|syscall.O_WRONLY,
+		ModeFile|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X),
+	)
 	if err != nil {
 		return err
 	}
@@ -285,6 +291,7 @@ func getProgData(cargs *cmdArgs) error {
 		} else if err != nil {
 			return err
 		}
+
 		if _, err := os.Stat(comprtConfigsRepoPath); errors.Is(err, fs.ErrNotExist) {
 			_, err := git.PlainClone(comprtConfigsRepoPath, false, &git.CloneOptions{
 				URL: comprtConfigsRepoUrl,
@@ -298,17 +305,20 @@ func getProgData(cargs *cmdArgs) error {
 			if err != nil {
 				return err
 			}
+
 			gitWorkingDir, err := comprtRepo.Worktree()
 			if err != nil {
 				return err
 			}
 			gitWorkingDir.Pull(&pullOpts)
 		}
+
 		if cargs.preprocessAliases {
 			makePath, err := exec.LookPath("make")
 			if err != nil {
 				log.Panic(err)
 			}
+
 			makeCmd := exec.Command(makePath, "PREPROCESS_ALIASES=1", cargs.alias)
 			makeCmd.Dir = comprtConfigsRepoPath
 			if _, err := makeCmd.Output(); err != nil {
@@ -353,7 +363,10 @@ func Chroot(target string) (func(returnDir string, parentRootFd *os.File) error,
 		mountPoint := filepath.Join(target, filesys)
 		if _, err := os.Stat(mountPoint); errors.Is(err, fs.ErrNotExist) {
 			// DISCUSS(cavcrosby): determine if FileMode(s) should differ for each mount.
-			os.Mkdir(mountPoint, fs.FileMode(0755))
+			os.Mkdir(
+				mountPoint,
+				os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X),
+			)
 		}
 		if err := syscall.Mount(filesys, filepath.Join(target, filesys), "", syscall.MS_BIND, ""); err != nil {
 			return nil, err

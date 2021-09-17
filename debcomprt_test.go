@@ -40,7 +40,11 @@ var pkgs []string = []string{"autoconf", "git", "wget"}
 // createTestFile creates a test file that is solely meant for testing. This file
 // should be created on the intentions of allowing any test to access it.
 func createTestFile(filePath, contents string) error {
-	err := ioutil.WriteFile(filePath, []byte(contents), fs.FileMode(0777))
+	err := ioutil.WriteFile(
+		filePath,
+		[]byte(contents), 
+		ModeFile|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
+	)
 	if err != nil {
 		return err
 	}
@@ -127,7 +131,7 @@ func TestGetProgData(t *testing.T) {
 }
 
 func TestGetComprtIncludes(t *testing.T) {
-	tempDirPath, err := ioutil.TempDir("", tempDir)
+	tempDirPath, err := ioutil.TempDir("", "_"+tempDir)
 	if err != nil {
 		t.Error(err)
 	}
@@ -151,7 +155,7 @@ func TestGetComprtIncludes(t *testing.T) {
 
 func TestChroot(t *testing.T) {
 	// e.g. /tmp/${tempDir} on Unix systems
-	tempDirPath, err := ioutil.TempDir("", tempDir)
+	tempDirPath, err := ioutil.TempDir("", "_"+tempDir)
 	if err != nil {
 		// DISCUSS(cavcrosby): determine if t.Errors at any point should just exit the prog.
 		t.Error(err)
@@ -201,7 +205,15 @@ func TestChroot(t *testing.T) {
 }
 
 func TestIntegration(t *testing.T) {
-	tempDirPath, err := ioutil.TempDir(".", "_"+tempDir)
+	progDataDir := appdirs.SiteDataDir(progname, "", "")
+	_, err := os.Stat(progDataDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
+	} else if err != nil {
+		t.Error(err)
+	}
+
+	tempDirPath, err := os.MkdirTemp(progDataDir, "_"+tempDir)
 	if err != nil {
 		t.Error(err)
 	}
@@ -225,9 +237,14 @@ touch %s
 		t.Skip("skipping integration test")
 	}
 
-	if err := os.Mkdir(target, fs.FileMode(0777)); err != nil {
-		t.Error(err)
+	mkTargetErr := os.Mkdir(
+		target, 
+		os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
+	);
+	if mkTargetErr != nil {
+		t.Error(mkTargetErr)
 	}
+
 	if err := createTestFile(cargs.comprtIncludesPath, strings.Join(pkgs, "\n")); err != nil {
 		t.Error(err)
 	}
