@@ -42,7 +42,7 @@ var pkgs []string = []string{"autoconf", "git", "wget"}
 func createTestFile(filePath, contents string) error {
 	err := ioutil.WriteFile(
 		filePath,
-		[]byte(contents), 
+		[]byte(contents),
 		ModeFile|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
 	)
 	if err != nil {
@@ -238,9 +238,9 @@ touch %s
 	}
 
 	mkTargetErr := os.Mkdir(
-		target, 
+		target,
 		os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
-	);
+	)
 	if mkTargetErr != nil {
 		t.Error(mkTargetErr)
 	}

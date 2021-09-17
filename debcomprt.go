@@ -77,6 +77,7 @@ var (
 	reFindEnvVar = regexp.MustCompile(`(?P<name>^[a-zA-Z_]\w*)=(?P<value>.+)`)
 )
 
+// Mappings of codenames to respective a package repository.
 var defaultMirrorMappings = map[string]string{
 	"buster":  defaultDebianMirror,
 	"focal":   defaultUbuntuMirror,
