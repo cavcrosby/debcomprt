@@ -359,14 +359,25 @@ func getComprtIncludes(includePkgs *[]string, cargs *cmdArgs) error {
 // of the chroot will be returned.
 func Chroot(target string) (func(returnDir string, parentRootFd *os.File) error, error) {
 	var fileSystemsToBind []string = []string{"/sys", "/proc", "/dev", "/dev/pts"}
-	var fileSystemsUnmountBacklog []string = []string{}
 	for _, filesys := range fileSystemsToBind {
 		mountPoint := filepath.Join(target, filesys)
 		if _, err := os.Stat(mountPoint); errors.Is(err, fs.ErrNotExist) {
-			// DISCUSS(cavcrosby): determine if FileMode(s) should differ for each mount.
+			var fileMode fs.FileMode
+			// filemode for /sys based on current workstation (same for /proc except url) and
+			// https://askubuntu.com/questions/341939/why-cant-i-create-a-directory-in-sys
+			switch filesys {
+			case "/sys":
+				fileMode = os.ModeDir | (OS_USER_R | OS_USER_X | OS_GROUP_R | OS_GROUP_X | OS_OTH_R | OS_OTH_X)
+			case "/proc":
+				fileMode = os.ModeDir | (OS_USER_R | OS_USER_X | OS_GROUP_R | OS_GROUP_X | OS_OTH_R | OS_OTH_X)
+			case "/dev":
+				fileMode = os.ModeDir | (OS_USER_R | OS_USER_W | OS_USER_X | OS_GROUP_R | OS_GROUP_X | OS_OTH_R | OS_OTH_X)
+			case "/dev/pts":
+				fileMode = os.ModeDir | (OS_USER_R | OS_USER_W | OS_USER_X | OS_GROUP_R | OS_GROUP_X | OS_OTH_R | OS_OTH_X)
+			}
 			os.Mkdir(
 				mountPoint,
-				os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X),
+				fileMode,
 			)
 		}
 		if err := syscall.Mount(filesys, filepath.Join(target, filesys), "", syscall.MS_BIND, ""); err != nil {
@@ -404,6 +415,7 @@ func Chroot(target string) (func(returnDir string, parentRootFd *os.File) error,
 		// package for Unix systems is still not at a stable version. So this will need to
 		// be revisited at some point. Also for reference: golang.org/x/sys
 		reverse(&fileSystemsToBind)
+		var fileSystemsUnmountBacklog []string = []string{}
 		for _, filesys := range fileSystemsToBind {
 			var retries int
 			for {
