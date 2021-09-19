@@ -150,7 +150,7 @@ func (cargs *cmdArgs) parseCmdArgs() {
 
 	app := &cli.App{
 		Name:            progname,
-		Usage:           "creates debian compartments, an undyling 'target' generated from debootstrap",
+		Usage:           "creates debian compartments, an underlying 'target' generated from debootstrap",
 		UsageText:       "debcomprt [global options] CODENAME TARGET [MIRROR]",
 		Description:     "[WARNING] this tool's cli is not fully POSIX compliant, so POSIX utility cli behavior may not always occur",
 		HideHelpCommand: true,
