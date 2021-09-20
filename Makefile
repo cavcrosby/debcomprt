@@ -48,7 +48,7 @@ COPYRIGHT_HOLDERS =
 # https://devconnected.com/how-to-list-git-tags/#Find_Latest_Git_Tag_Available
 # version = $(shell ${GIT} describe --tags --abbrev=0 | sed 's/v//')
 # TODO(cavcrosby): temp until tagging can be sorted.
-version = 1.0
+version = 1.0.0
 _upstream_tarball_prefix = ${TARGET_EXEC}_${version}
 _upstream_tarball_path = ${BUILD_DIR}/${_upstream_tarball_prefix}${UPSTREAM_TARBALL_EXT}
 src := $(shell find . \( -type f \) -and \( -iname '*.go' \) -and \( -not -iregex '.*/vendor.*' \))
@@ -96,18 +96,21 @@ ${UPSTREAM_TARBALL}: ${_upstream_tarball_path}
 
 ${_upstream_tarball_path}:
 >	mkdir --parents "${BUILD_DIR}"
->	tar czvf "$@" \
+>	tar zcf "$@" --strip-components=0 \
+		--transform 's,^\.,${_upstream_tarball_prefix},' \
 		--exclude=debian \
 		--exclude=debian/* \
+		--exclude="${BUILD_DIR}" \
+		--exclude="${BUILD_DIR}"/* \
 		--exclude-vcs-ignores \
-		.github .gitignore *
+		./.github ./.gitignore ./*
 
 .PHONY: ${DEBSOURCE}
 ${DEBSOURCE}: ${_upstream_tarball_path}
->	@cd "${BUILD_DIR}" \
->	&& mkdir --parents "${_upstream_tarball_prefix}" \
->	&& tar zxvf "$$(basename ${_upstream_tarball_path})" -C "${_upstream_tarball_prefix}" \
+>	cd "${BUILD_DIR}" \
+>	&& tar zxf "$$(basename ${_upstream_tarball_path})" \
 >	&& cd "${_upstream_tarball_prefix}" \
+>	&& echo $${PWD} \
 >	&& debuild -us -uc
 
 .PHONY: ${CLEAN}

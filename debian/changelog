@@ -1,5 +1,5 @@
-debcomprt (1.0-1) UNRELEASED; urgency=medium
+debcomprt (1.0.0-1) UNRELEASED; urgency=medium
 
   * Initial release.
 
- -- Conner Crosby <conner@cavcrosby.tech>  Sun, 19 Sep 2021 12:47:54 -0400
+ -- Conner Crosby <conner@cavcrosby.tech>  Sun, 19 Sep 2021 23:42:46 -0400
