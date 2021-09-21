@@ -10,6 +10,9 @@ BUILD_DIR = ./build
 TARGET_EXEC = debcomprt
 UPSTREAM_TARBALL_EXT = .orig.tar.gz
 
+# DISCUSS(cavcrosby): according to the make manual, every makefile should define
+# the INSTALL variable. Perhaps look into this later? How does this affect
+# previous makefiles?
 # executables
 GO = go
 GIT = git
@@ -26,7 +29,7 @@ GO_TOOLS = github.com/google/addlicense
 # https://golang.org/doc/tutorial/compile-install
 prefix = $(shell if [ -n "${GOBIN}" ]; then echo "${GOBIN}"; else echo "${GOPATH}/bin"; fi)
 exec_prefix = ${prefix}
-bin_dir = ${exec_prefix}
+bin_dir = ${exec_prefix}/bin
 
 # targets
 HELP = help
@@ -49,9 +52,12 @@ COPYRIGHT_HOLDERS =
 # version = $(shell ${GIT} describe --tags --abbrev=0 | sed 's/v//')
 # TODO(cavcrosby): temp until tagging can be sorted.
 version = 1.0.0
-_upstream_tarball_prefix = ${TARGET_EXEC}_${version}
-_upstream_tarball_path = ${BUILD_DIR}/${_upstream_tarball_prefix}${UPSTREAM_TARBALL_EXT}
+_upstream_tarball_prefix = ${TARGET_EXEC}-${version}
+_upstream_tarball = ${_upstream_tarball_prefix}${UPSTREAM_TARBALL_EXT}
+_upstream_tarball_dash_to_underscore = $(shell echo "${_upstream_tarball}" | awk --field-separator='-' '{print $$1"_"$$2}')
+_upstream_tarball_path = ${BUILD_DIR}/${_upstream_tarball}
 src := $(shell find . \( -type f \) -and \( -iname '*.go' \) -and \( -not -iregex '.*/vendor.*' \))
+LDFLAGS := $(shell dpkg-buildflags --get LDFLAGS)
 
 # inspired from:
 # https://stackoverflow.com/questions/5618615/check-if-a-program-exists-from-a-makefile#answer-25668869
@@ -72,11 +78,17 @@ ${HELP}:
 >	@echo '                          (e.g. "John Smith, Alice Smith" or "John Smith")'
 
 ${TARGET_EXEC}: debcomprt.go
->	${GO} build -o "${TARGET_EXEC}" -mod vendor
+>	${GO} build -o "${TARGET_EXEC}" -buildmode=pie -mod vendor
 
+# TODO(cavcrosby): this is dirty considering DESTDIR can now only be specified
+# during a package install. Otherwise, things will go south very fast.
 .PHONY: ${INSTALL}
 ${INSTALL}: ${TARGET_EXEC}
+ifdef DESTDIR
+>	${INSTALL} "${TARGET_EXEC}" "${DESTDIR}${bin_dir}"
+else
 >	${GO} install
+endif
 
 .PHONY: ${INSTALL_TOOLS}
 ${INSTALL_TOOLS}:
@@ -96,7 +108,7 @@ ${UPSTREAM_TARBALL}: ${_upstream_tarball_path}
 
 ${_upstream_tarball_path}:
 >	mkdir --parents "${BUILD_DIR}"
->	tar zcf "$@" --strip-components=0 \
+>	tar zcf "$@" \
 		--transform 's,^\.,${_upstream_tarball_prefix},' \
 		--exclude=debian \
 		--exclude=debian/* \
@@ -108,9 +120,10 @@ ${_upstream_tarball_path}:
 .PHONY: ${DEBSOURCE}
 ${DEBSOURCE}: ${_upstream_tarball_path}
 >	cd "${BUILD_DIR}" \
->	&& tar zxf "$$(basename ${_upstream_tarball_path})" \
+>	&& mv "${_upstream_tarball}" "${_upstream_tarball_dash_to_underscore}" \
+>	&& tar zxf "${_upstream_tarball_dash_to_underscore}" \
 >	&& cd "${_upstream_tarball_prefix}" \
->	&& echo $${PWD} \
+>	&& cp --recursive "${CURDIR}/debian" ./debian \
 >	&& debuild -us -uc
 
 .PHONY: ${CLEAN}
