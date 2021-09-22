@@ -62,4 +62,4 @@ jobs:
     - uses: actions/upload-artifact@v2
       with:
         name: debcomprt
-        path: ./debcomprt
+        path: ./build/debcomprt

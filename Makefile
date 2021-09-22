@@ -5,9 +5,8 @@
 # recursive variables
 SHELL = /usr/bin/sh
 BUILD_DIR = ./build
-# TODO(cavcrosby): have the target executable also be generated in the BUILD_DIR.
-# Make sure to account for ci.
 TARGET_EXEC = debcomprt
+target_exec_path = ${BUILD_DIR}/${TARGET_EXEC}
 UPSTREAM_TARBALL_EXT = .orig.tar.gz
 
 # DISCUSS(cavcrosby): according to the make manual, every makefile should define
@@ -67,19 +66,19 @@ ${HELP}:
 >	@echo '  ${INSTALL_TOOLS}      - installs the development tools used for the project'
 >	@echo '  ${TEST}               - runs test suite for the project'
 >	@echo '  ${ADD_LICENSE}        - adds license header to src files'
->	@echo '  ${DEB}                - generates the project binary debian package'
+>	@echo '  ${DEB}                - generates the project'\''s debian package(s)'
 >	@echo '  ${CLEAN}              - remove files created by other targets'
 >	@echo 'Common make configurations (e.g. make [config]=1 [targets]):'
 >	@echo '  COPYRIGHT_HOLDERS     - string denoting copyright holder(s)/author(s)'
 >	@echo '                          (e.g. "John Smith, Alice Smith" or "John Smith")'
 
 ${TARGET_EXEC}: debcomprt.go
->	${GO} build -o "${TARGET_EXEC}" -buildmode=pie -mod vendor
+>	${GO} build -o "${target_exec_path}" -buildmode=pie -mod vendor
 
 .PHONY: ${INSTALL}
 ${INSTALL}: ${TARGET_EXEC}
 ifdef DPKG_INSTALL
->	${INSTALL} "${TARGET_EXEC}" "${DESTDIR}${bin_dir}"
+>	${INSTALL} "${target_exec_path}" "${DESTDIR}${bin_dir}"
 else
 >	${GO} install
 endif
@@ -122,5 +121,4 @@ ${DEB}: ${_upstream_tarball_path}
 
 .PHONY: ${CLEAN}
 ${CLEAN}:
->	rm --force "${TARGET_EXEC}"
 >	rm --recursive --force "${BUILD_DIR}"
