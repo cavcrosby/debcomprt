@@ -33,13 +33,11 @@ bin_dir = ${exec_prefix}/bin
 
 # targets
 HELP = help
-SETUP = setup
 INSTALL = install
 INSTALL_TOOLS = install-tools
 TEST = test
 ADD_LICENSE = add-license
 UPSTREAM_TARBALL = upstream-tarball
-DEBSOURCE = debsource
 DEB = deb
 CLEAN = clean
 
@@ -49,15 +47,12 @@ COPYRIGHT_HOLDERS =
 # simply expanded variables
 # inspired from:
 # https://devconnected.com/how-to-list-git-tags/#Find_Latest_Git_Tag_Available
-# version = $(shell ${GIT} describe --tags --abbrev=0 | sed 's/v//')
-# TODO(cavcrosby): temp until tagging can be sorted.
-version = 1.0.0
+version = $(shell ${GIT} describe --tags --abbrev=0 | sed 's/v//')
+src := $(shell find . \( -type f \) -and \( -iname '*.go' \) -and \( -not -iregex '.*/vendor.*' \))
 _upstream_tarball_prefix = ${TARGET_EXEC}-${version}
 _upstream_tarball = ${_upstream_tarball_prefix}${UPSTREAM_TARBALL_EXT}
 _upstream_tarball_dash_to_underscore = $(shell echo "${_upstream_tarball}" | awk --field-separator='-' '{print $$1"_"$$2}')
 _upstream_tarball_path = ${BUILD_DIR}/${_upstream_tarball}
-src := $(shell find . \( -type f \) -and \( -iname '*.go' \) -and \( -not -iregex '.*/vendor.*' \))
-LDFLAGS := $(shell dpkg-buildflags --get LDFLAGS)
 
 # inspired from:
 # https://stackoverflow.com/questions/5618615/check-if-a-program-exists-from-a-makefile#answer-25668869
@@ -66,25 +61,24 @@ _check_executables := $(foreach exec,${executables},$(if $(shell command -v ${ex
 .PHONY: ${HELP}
 ${HELP}:
 	# inspired by the makefiles of the Linux kernel and Mercurial
->	@echo 'Available make targets:'
+>	@echo 'Common make targets:'
 >	@echo '  ${TARGET_EXEC}          - the ${TARGET_EXEC} binary'
 >	@echo '  ${INSTALL}            - installs the local decomprt binary (pathing: ${prefix})'
 >	@echo '  ${INSTALL_TOOLS}      - installs the development tools used for the project'
 >	@echo '  ${TEST}               - runs test suite for the project'
 >	@echo '  ${ADD_LICENSE}        - adds license header to src files'
+>	@echo '  ${DEB}                - generates the project binary debian package'
 >	@echo '  ${CLEAN}              - remove files created by other targets'
->	@echo 'Public make configurations (e.g. make [config]=1 [targets]):'
+>	@echo 'Common make configurations (e.g. make [config]=1 [targets]):'
 >	@echo '  COPYRIGHT_HOLDERS     - string denoting copyright holder(s)/author(s)'
 >	@echo '                          (e.g. "John Smith, Alice Smith" or "John Smith")'
 
 ${TARGET_EXEC}: debcomprt.go
 >	${GO} build -o "${TARGET_EXEC}" -buildmode=pie -mod vendor
 
-# TODO(cavcrosby): this is dirty considering DESTDIR can now only be specified
-# during a package install. Otherwise, things will go south very fast.
 .PHONY: ${INSTALL}
 ${INSTALL}: ${TARGET_EXEC}
-ifdef DESTDIR
+ifdef DPKG_INSTALL
 >	${INSTALL} "${TARGET_EXEC}" "${DESTDIR}${bin_dir}"
 else
 >	${GO} install
@@ -117,8 +111,8 @@ ${_upstream_tarball_path}:
 		--exclude-vcs-ignores \
 		./.github ./.gitignore ./*
 
-.PHONY: ${DEBSOURCE}
-${DEBSOURCE}: ${_upstream_tarball_path}
+.PHONY: ${DEB}
+${DEB}: ${_upstream_tarball_path}
 >	cd "${BUILD_DIR}" \
 >	&& mv "${_upstream_tarball}" "${_upstream_tarball_dash_to_underscore}" \
 >	&& tar zxf "${_upstream_tarball_dash_to_underscore}" \
