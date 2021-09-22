@@ -15,8 +15,6 @@
 # vendor/
 
 # repo specfic
+/build
 comprtconfig
 comprtinc.txt
-
-# local tmp test dir
-_*

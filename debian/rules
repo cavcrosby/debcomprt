@@ -1,0 +1,19 @@
+#!/usr/bin/make -f
+
+# special makefile variables
+.RECIPEPREFIX := >
+
+%:
+>	dh $@
+
+override_dh_auto_test:
+>	@echo "skip running tests"
+
+override_dh_auto_install:
+>	$(MAKE) -j12 install DESTDIR="${CURDIR}/debian/debcomprt" prefix=/usr/local DPKG_INSTALL=true AM_UPDATE_INFO_DIR=no "INSTALL=install --strip-program=true"
+
+override_dh_usrlocal:
+	# Not ideal, but only packages from the debian archive should go into '/usr/' vs
+	# '/usr/local'. At least in my opinion.
+	# https://stackoverflow.com/questions/7459644/why-is-dh-usrlocal-throwing-a-build-error
+>	@echo "allow for files to exist in /usr/local"
