@@ -1,0 +1,44 @@
+name: Create Deb Package
+
+# credits go to:
+# https://github.community/t/how-to-run-github-actions-workflow-only-for-new-tags/16075/27
+on:
+  push:
+    branches:
+      - "!*"
+    tags:
+      - "v*"
+
+jobs:
+  upload-deb:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.17
+
+    - name: Set up Go for root
+      run: |
+        sudo ln --symbolic --force "$(command -v go)" "$(sudo --shell command -v go)"
+        sudo go version
+        
+    - name: Display roots Go env
+      run: sudo go env
+
+    - name: Git the tag
+      run: echo "GIT_TAG=${GITHUB_REF#refs/tags/}" >> ${GITHUB_ENV}
+
+    - name: Install dependencies
+      run: sudo apt-get install build-essential debhelper debootstrap devscripts --assume-yes
+
+    - name: Build deb
+      run: make version=${{ env.GIT_TAG }} deb
+    
+    - uses: actions/upload-artifact@v2
+      with:
+        name: debcomprt
+        path: ./build/*.deb
+        if-no-files-found: error

@@ -46,7 +46,11 @@ COPYRIGHT_HOLDERS =
 # simply expanded variables
 # inspired from:
 # https://devconnected.com/how-to-list-git-tags/#Find_Latest_Git_Tag_Available
-version = $(shell ${GIT} describe --tags --abbrev=0 | sed 's/v//')
+ifeq (${version},)
+	override version := $(shell ${GIT} describe --tags --abbrev=0 | sed 's/v//')
+else
+	override version := $(shell echo ${version} | sed 's/v//')
+endif
 src := $(shell find . \( -type f \) -and \( -iname '*.go' \) -and \( -not -iregex '.*/vendor.*' \))
 _upstream_tarball_prefix = ${TARGET_EXEC}-${version}
 _upstream_tarball = ${_upstream_tarball_prefix}${UPSTREAM_TARBALL_EXT}
@@ -122,3 +126,7 @@ ${DEB}: ${_upstream_tarball_path}
 .PHONY: ${CLEAN}
 ${CLEAN}:
 >	rm --recursive --force "${BUILD_DIR}"
+
+.PHONY: foo
+foo:
+>	@echo ${version}
