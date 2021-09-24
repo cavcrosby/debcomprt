@@ -2,8 +2,8 @@ Source: debcomprt
 Maintainer: Conner Crosby <conner@cavcrosby.tech>
 Section: admin
 Priority: optional
-Build-Depends: debhelper (>= 13.3.4),
-                devscripts (>= 2.21.1)
+Build-Depends: debhelper (>= 12),
+                devscripts (>= 2.20)
 Standards-Version: 4.6.0.1
 Homepage: https://github.com/cavcrosby/debcomprt
 
