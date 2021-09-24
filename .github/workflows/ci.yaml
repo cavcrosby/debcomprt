@@ -1,6 +1,11 @@
 name: Continuous Integration
 
-on: [push]
+# for reference:
+# https://github.community/t/dont-run-on-tag-creation/137469/7
+on: 
+  push:
+    branches:
+      - '**'
 
 jobs:
   build:
