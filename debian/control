@@ -15,6 +15,6 @@ Depends: debootstrap (>= 1.0.123),
          ${shlibs:Depends}
 Description: Creates debian compartments, an underlying 'target' generated from debootstrap
  Debian compartments are chrooted environments created normally with deboostrap
- but with added functionality. Currently those are:
+ but with added configuration. Currently those are:
   - A named configuration script to configure the chrooted environment
   - A optional file that will have debootstrap install additional packages
