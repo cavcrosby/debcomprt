@@ -16,6 +16,17 @@ apt-get update
 apt-get install debcomprt
 ```
 
+## Tree Versioning Policy
+
+1.  Any changes to files under debian/* directory will result in the debian_revision
+    being incremented. Thus after the commit the latest tag will to be moved to 
+    the recent commit (the resulting uploaded package will only have the
+    debian_revision incremented).
+2.  Any changes to the project will either increment the major.minor.patch version
+    number. What this means is best left to interpretation as to what counts as a
+    change to the project (e.g. changing the README should not require incrementing
+    the patch version).
+
 ## License
 
 See LICENSE.
