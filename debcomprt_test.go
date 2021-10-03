@@ -52,6 +52,9 @@ func createTestFile(filePath, contents string) error {
 	return nil
 }
 
+// DISCUSS(cavcrosby): some variable names only differ from packages by the case
+// of the variable/identifier name...might be an issue.
+
 // Get a file's system status.
 func stat(filePath string, stat *syscall.Stat_t) error {
 	fileInfo, err := os.Stat(filePath)
@@ -217,7 +220,7 @@ func TestChroot(t *testing.T) {
 		t.Fatal("was unable to chroot into target")
 	}
 
-	if err := exitChroot("/", root); err != nil {
+	if err := exitChroot(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -232,7 +235,7 @@ func TestChroot(t *testing.T) {
 	}
 }
 
-func TestIntegration(t *testing.T) {
+func TestCreateIntegration(t *testing.T) {
 	progDataDir := appdirs.SiteDataDir(progname, "", "")
 	_, err := os.Stat(progDataDir)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -280,7 +283,7 @@ touch %s
 		t.Fatal(err)
 	}
 
-	debcomprtCmd := exec.Command("debcomprt", "--includes-path", cargs.comprtIncludesPath, "--config-path", cargs.comprtConfigPath, codename, target)
+	debcomprtCmd := exec.Command("debcomprt", "create", "--includes-path", cargs.comprtIncludesPath, "--config-path", cargs.comprtConfigPath, codename, target)
 	if testing.Verbose() {
 		debcomprtCmd.Stdout = os.Stdout
 		debcomprtCmd.Stderr = os.Stderr

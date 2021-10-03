@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -35,11 +36,15 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// TODO(cavcrosby): Remove comprtIncludeFile extension, as the other program
+// specific files do not have a extension.
+
 const (
 	comprtConfigFile      = "comprtconfig"
 	comprtConfigsRepoName = "comprtconfigs"
 	comprtConfigsRepoUrl  = "https://github.com/cavcrosby/comprtconfigs"
 	comprtIncludeFile     = "comprtinc.txt"
+	defaultComprtUid      = 1224
 	defaultDebianMirror   = "http://ftp.us.debian.org/debian/"
 	defaultUbuntuMirror   = "http://archive.ubuntu.com/ubuntu/"
 	noAlias               = "none"
@@ -96,6 +101,7 @@ var CustomOnUsageErrorFunc cli.OnUsageErrorFunc = func(context *cli.Context, err
 type cmdArgs struct {
 	alias              string
 	codeName           string
+	command            string
 	comprtConfigPath   string
 	comprtIncludesPath string
 	helpFlagPassedIn   bool
@@ -147,80 +153,117 @@ func (cargs *cmdArgs) parseCmdArgs() {
 			localOsArgs = append(localOsArgs[:i+1], localOsArgs[i+2:]...)
 		}
 	}
+	os.Setenv("DEBCOMPRT_DEFAULT_LOGIN_UID", strconv.Itoa(defaultComprtUid))
 
+	// TODO(cavcrosby): Pretty sure --quiet was never implemented in any part of the
+	// code!
 	app := &cli.App{
 		Name:            progname,
-		Usage:           "creates debian compartments, an underlying 'target' generated from debootstrap",
-		UsageText:       "debcomprt [global options] CODENAME TARGET [MIRROR]",
+		Usage:           "manages debian compartments (comprt), an underlying 'target' generated from debootstrap",
+		UsageText:       "debcomprt [global options] [command] CODENAME TARGET [MIRROR]",
 		Description:     "[WARNING] this tool's cli is not fully POSIX compliant, so POSIX utility cli behavior may not always occur",
 		HideHelpCommand: true,
 		OnUsageError:    CustomOnUsageErrorFunc,
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:        "alias",
-				Aliases:     []string{"a"},
-				Value:       noAlias,
-				Usage:       fmt.Sprintf("use a particular comprt configuration from %v", comprtConfigsRepoUrl),
-				Destination: &cargs.alias,
+		Commands: []*cli.Command{
+			{
+				Name:      "chroot",
+				Usage:     "chroots into a debian compartment",
+				UsageText: "debcomprt [options] create TARGET",
+				Action: func(context *cli.Context) error {
+					if context.NArg() < 1 { // TARGET
+						cli.ShowAppHelp(context)
+						log.Panic(errors.New("TARGET argument is required"))
+					} else if _, err := os.Stat(context.Args().Get(0)); errors.Is(err, fs.ErrNotExist) {
+						log.Panic(err)
+					}
+
+					cargs.command = context.Command.Name
+					cargs.target = context.Args().Get(0)
+					return nil
+				},
 			},
-			&cli.BoolFlag{
-				Name:        "alias-envvar",
-				Aliases:     []string{"e"},
-				Usage:       "preprocess all the aliases files by evaluating these env vars (ex. <flag> foo=bar <flag> bar=baz)",
-				Destination: &cargs.preprocessAliases,
-			},
-			&cli.BoolFlag{
-				Name:        "passthrough",
-				Value:       false,
-				Usage:       "pass the rest of the flag/flag arguments to debootstrap (e.g. use --foo=bar flag format)",
-				Destination: &cargs.passthrough,
-			},
-			&cli.BoolFlag{
-				Name:        "quiet",
-				Aliases:     []string{"q"},
-				Value:       false,
-				Usage:       "quiet (no output)",
-				Destination: &cargs.quiet,
-			},
-			&cli.PathFlag{
-				Name:        "includes-path",
-				Aliases:     []string{"i"},
-				Value:       cargs.comprtIncludesPath,
-				Usage:       "alternative `PATH` to comprt includes file",
-				Destination: &cargs.comprtIncludesPath,
-			},
-			&cli.PathFlag{
-				Name:        "config-path",
-				Aliases:     []string{"c"},
-				Value:       cargs.comprtConfigPath,
-				Usage:       "alternative `PATH` to comptr config file",
-				Destination: &cargs.comprtConfigPath,
+			{
+				Name:      "create",
+				Usage:     "creates a debian compartment",
+				UsageText: "debcomprt [options] create CODENAME TARGET [MIRROR]",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:        "alias",
+						Aliases:     []string{"a"},
+						Value:       noAlias,
+						Usage:       fmt.Sprintf("use a particular comprt configuration from %v", comprtConfigsRepoUrl),
+						Destination: &cargs.alias,
+					},
+					&cli.BoolFlag{
+						Name:        "alias-envvar",
+						Aliases:     []string{"e"},
+						Usage:       "preprocess all the aliases files by evaluating these env vars (ex. <flag> foo=bar <flag> bar=baz)",
+						Destination: &cargs.preprocessAliases,
+					},
+					&cli.BoolFlag{
+						Name:        "passthrough",
+						Value:       false,
+						Usage:       "pass the rest of the flag/flag arguments to debootstrap (e.g. use --foo=bar flag format)",
+						Destination: &cargs.passthrough,
+					},
+					&cli.BoolFlag{
+						Name:        "quiet",
+						Aliases:     []string{"q"},
+						Value:       false,
+						Usage:       "quiet (no output)",
+						Destination: &cargs.quiet,
+					},
+					&cli.PathFlag{
+						Name:        "includes-path",
+						Aliases:     []string{"i"},
+						Value:       cargs.comprtIncludesPath,
+						Usage:       "alternative `PATH` to comprt includes file",
+						Destination: &cargs.comprtIncludesPath,
+					},
+					&cli.PathFlag{
+						Name:        "config-path",
+						Aliases:     []string{"c"},
+						Value:       cargs.comprtConfigPath,
+						Usage:       "alternative `PATH` to comptr config file",
+						Destination: &cargs.comprtConfigPath,
+					},
+				},
+				Action: func(context *cli.Context) error {
+					if context.NArg() < 1 { // CODENAME
+						cli.ShowAppHelp(context)
+						log.Panic(errors.New("CODENAME argument is required"))
+					}
+
+					if context.NArg() < 2 { // TARGET
+						cli.ShowAppHelp(context)
+						log.Panic(errors.New("TARGET argument is required"))
+					} else if _, err := os.Stat(context.Args().Get(1)); errors.Is(err, fs.ErrNotExist) {
+						log.Panic(err)
+					}
+
+					if context.NArg() < 3 { // MIRROR
+						if _, ok := defaultMirrorMappings[context.Args().Get(0)]; !ok {
+							log.Panic(errors.New("no default MIRROR could be determined"))
+						}
+						cargs.mirror = defaultMirrorMappings[context.Args().Get(0)]
+					} else {
+						cargs.mirror = context.Args().Get(2)
+					}
+
+					cargs.command = context.Command.Name
+					cargs.codeName = context.Args().Get(0)
+					cargs.target = context.Args().Get(1)
+					return nil
+				},
 			},
 		},
 		Action: func(context *cli.Context) error {
-			if context.NArg() < 1 { // CODENAME
+			if context.NArg() < 1 {
 				cli.ShowAppHelp(context)
-				log.Panic(errors.New("CODENAME argument is required"))
+				os.Exit(1)
 			}
 
-			if context.NArg() < 2 { // TARGET
-				cli.ShowAppHelp(context)
-				log.Panic(errors.New("TARGET argument is required"))
-			} else if _, err := os.Stat(context.Args().Get(1)); errors.Is(err, fs.ErrNotExist) {
-				log.Panic(err)
-			}
-
-			if context.NArg() < 3 { // MIRROR
-				if _, ok := defaultMirrorMappings[context.Args().Get(0)]; !ok {
-					log.Panic(errors.New("no default MIRROR could be determined"))
-				}
-				cargs.mirror = defaultMirrorMappings[context.Args().Get(0)]
-			} else {
-				cargs.mirror = context.Args().Get(2)
-			}
-
-			cargs.codeName = context.Args().Get(0)
-			cargs.target = context.Args().Get(1)
+			// this shouldn't get here as long as a subcommand is required!
 			return nil
 		},
 	}
@@ -278,6 +321,27 @@ func stringInArr(strArg string, arr *[]string) bool {
 		}
 	}
 	return false
+}
+
+// Look in a file that has some form of standardized file format
+// (e.g. /etc/passwd, /etc/os-release) and locate a 'field' among
+// the rows based on a regex for another field. Fields are a sequence
+// of elements separated by a field separator.
+func locateField(filePath, fieldSep string, matchIndex, returnIndex int, matchRegex *regexp.Regexp) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Split(scanner.Text(), fieldSep)
+		if matchRegex.FindStringIndex(fields[matchIndex]) != nil {
+			return fields[returnIndex], nil
+		}
+	}
+	return "", nil
 }
 
 // Get required extra data to be used by the program.
@@ -357,8 +421,18 @@ func getComprtIncludes(includePkgs *[]string, cargs *cmdArgs) error {
 
 // Set the current process's root dir to target. A function to exit out
 // of the chroot will be returned.
-func Chroot(target string) (func(returnDir string, parentRootFd *os.File) error, error) {
+func Chroot(target string) (func() error, error) {
 	var fileSystemsToBind []string = []string{"/sys", "/proc", "/dev", "/dev/pts"}
+	returnDir, err := os.Getwd()
+	if err != nil {
+		log.Panic(err)
+	}
+
+	root, err := os.Open("/")
+	if err != nil {
+		log.Panic(err)
+	}
+
 	for _, filesys := range fileSystemsToBind {
 		mountPoint := filepath.Join(target, filesys)
 		if _, err := os.Stat(mountPoint); errors.Is(err, fs.ErrNotExist) {
@@ -393,7 +467,7 @@ func Chroot(target string) (func(returnDir string, parentRootFd *os.File) error,
 		return nil, err
 	}
 
-	return func(returnDir string, root *os.File) error {
+	return func() error {
 		if err := root.Chdir(); err != nil {
 			return err
 		}
@@ -468,29 +542,62 @@ func Chroot(target string) (func(returnDir string, parentRootFd *os.File) error,
 	}, nil
 }
 
-// Start the main program execution.
-func main() {
-	var includePkgs, debootstrapCmdArr []string
-	cargs := &cmdArgs{ // sets defaults
-		comprtConfigPath:   filepath.Join(".", comprtConfigFile),
-		comprtIncludesPath: filepath.Join(".", comprtIncludeFile),
-		passthrough:        false,
-		quiet:              false,
+// Provide an interactive shell into the comprt.
+func runInteractiveChroot(target string) error {
+	var uidRegex *regexp.Regexp = regexp.MustCompile(strconv.Itoa(defaultComprtUid))
+	defaultComprtUsername, err := locateField(filepath.Join(target, "/etc/passwd"), ":", 2, 0, uidRegex)
+	if err != nil{
+		return err
 	}
-	cargs.parseCmdArgs()
+	
+	exitChroot, err := Chroot(target)
+	if err != nil {
+		return err
+	}
 
+	bashPath, err := exec.LookPath("bash")
+	if err != nil {
+		return err
+	}
+
+	suPath, err := exec.LookPath("su")
+	if err != nil {
+		return err
+	}
+
+	bashCmd := exec.Command(suPath, "--shell", bashPath, "--login", defaultComprtUsername)
+	bashCmd.Stdin = os.Stdin
+	bashCmd.Stdout = os.Stdout
+	bashCmd.Stderr = os.Stderr
+	if err := bashCmd.Start(); err != nil {
+		return err
+	}
+	if err := bashCmd.Wait(); err != nil {
+		return err
+	}
+
+	if err := exitChroot(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Create a debian comprt.
+func createComprt(cargs *cmdArgs) error {
 	if err := getProgData(cargs); err != nil {
-		log.Panic(err)
+		return err
 	}
 
 	debootstrapPath, err := exec.LookPath("debootstrap")
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
+
+	var includePkgs, debootstrapCmdArr []string
 	debootstrapCmdArr = append([]string{debootstrapPath}, debootstrapCmdArr...)
 
 	if err := getComprtIncludes(&includePkgs, cargs); err != nil {
-		log.Panic(err)
+		return err
 	}
 	if includePkgs != nil {
 		debootstrapCmdArr = append(debootstrapCmdArr, "--include="+strings.Join(includePkgs, ","))
@@ -502,7 +609,7 @@ func main() {
 	debootstrapCmdArr = append(debootstrapCmdArr, cargs.codeName, cargs.target, cargs.mirror)
 
 	if err := copy(cargs.comprtConfigPath, filepath.Join(cargs.target, comprtConfigFile)); err != nil {
-		log.Panic(err)
+		return err
 	}
 
 	// inspired by:
@@ -511,44 +618,56 @@ func main() {
 	debootstrapCmd.Stdout = os.Stdout
 	debootstrapCmd.Stderr = os.Stderr
 	if err := debootstrapCmd.Start(); err != nil {
-		log.Panic(err)
+		return err
 	}
 	if err := debootstrapCmd.Wait(); err != nil {
-		log.Panic(err)
+		return err
 	}
-
-	previousDir, err := os.Getwd()
-	if err != nil {
-		log.Panic(err)
-	}
-
-	root, err := os.Open("/")
-	if err != nil {
-		log.Panic(err)
-	}
-	defer root.Close()
 
 	exitChroot, err := Chroot(cargs.target)
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
 
 	shPath, err := exec.LookPath("sh")
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
 	comprtConfigFileCmd := exec.Command(shPath, filepath.Join("/", comprtConfigFile))
 	comprtConfigFileCmd.Stdout = os.Stdout
 	comprtConfigFileCmd.Stderr = os.Stderr
 	if err := comprtConfigFileCmd.Start(); err != nil {
-		log.Panic(err)
+		return err
 	}
 	if err := comprtConfigFileCmd.Wait(); err != nil {
-		log.Panic(err)
+		return err
 	}
 
-	if err := exitChroot(previousDir, root); err != nil {
-		log.Panic(err)
+	if err := exitChroot(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Start the main program execution.
+func main() {
+	cargs := &cmdArgs{ // sets defaults
+		comprtConfigPath:   filepath.Join(".", comprtConfigFile),
+		comprtIncludesPath: filepath.Join(".", comprtIncludeFile),
+		passthrough:        false,
+		quiet:              false,
+	}
+	cargs.parseCmdArgs()
+
+	switch cargs.command {
+	case "chroot":
+		if err := runInteractiveChroot(cargs.target); err != nil {
+			log.Panic(err)
+		}
+	case "create":
+		if err := createComprt(cargs); err != nil {
+			log.Panic(err)
+		}
 	}
 
 	os.Exit(0)
