@@ -344,6 +344,11 @@ func locateField(fPath, fieldSep string, matchIndex, returnIndex int, matchRegex
 	return "", nil
 }
 
+// DISCUSS(cavcrosby): cmdArgs does more than just store arguments passed in to
+// the command at the command line. Thus, there should be a more generic way to
+// name the structure. At least, if it continues to serve another purpose besides
+// saving command line flag/flags arguments/positional arguments.
+
 // Get required extra data to be used by the program.
 func getProgData(cargs *cmdArgs) error {
 	progDataDir := appdirs.SiteDataDir(progname, "", "")
@@ -425,12 +430,12 @@ func Chroot(target string) (func() error, error) {
 	var fileSystemsToBind []string = []string{"/sys", "/proc", "/dev", "/dev/pts"}
 	returnDir, err := os.Getwd()
 	if err != nil {
-		log.Panic(err)
+		return nil, err
 	}
 
 	root, err := os.Open("/")
 	if err != nil {
-		log.Panic(err)
+		return nil, err
 	}
 
 	for _, filesys := range fileSystemsToBind {
@@ -454,6 +459,11 @@ func Chroot(target string) (func() error, error) {
 				fileMode,
 			)
 		}
+		// TODO(cavcrosby): it was discovered that exitChroot was not deferred in MANY cases. Meaning, if
+		// any part of the code after the Chroot returned an err, then exitChroot would
+		// never be called. Leading to possibly a defunct system. While I consider this
+		// part of the Chroot to primitive, there should be some attempt to clean up in
+		// case mounting or chrooting fail.
 		if err := syscall.Mount(filesys, filepath.Join(target, filesys), "", syscall.MS_BIND, ""); err != nil {
 			return nil, err
 		}
@@ -549,7 +559,7 @@ func Chroot(target string) (func() error, error) {
 }
 
 // Provide an interactive shell into the comprt.
-func runInteractiveChroot(target string) error {
+func runInteractiveChroot(target string) (errs []error) {
 	var uidRegex *regexp.Regexp = regexp.MustCompile(strconv.Itoa(defaultComprtUid))
 	var loginNameIndex, uidIndex int = 0, 2
 	defaultComprtUsername, err := locateField(
@@ -560,22 +570,31 @@ func runInteractiveChroot(target string) error {
 		uidRegex,
 	)
 	if err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 
 	exitChroot, err := Chroot(target)
 	if err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
+	defer func() {
+		if err := exitChroot(); err != nil {
+			errs = append(errs, err)
+		}
+	}()
 
 	bashPath, err := exec.LookPath("bash")
 	if err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 
 	suPath, err := exec.LookPath("su")
 	if err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 
 	bashCmd := exec.Command(suPath, "--shell", bashPath, "--login", defaultComprtUsername)
@@ -583,34 +602,40 @@ func runInteractiveChroot(target string) error {
 	bashCmd.Stdout = os.Stdout
 	bashCmd.Stderr = os.Stderr
 	if err := bashCmd.Start(); err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 	if err := bashCmd.Wait(); err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 
 	if err := exitChroot(); err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 	return nil
 }
 
 // Create a debian comprt.
-func createComprt(cargs *cmdArgs) error {
+func createComprt(cargs *cmdArgs) (errs []error) {
 	if err := getProgData(cargs); err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 
 	debootstrapPath, err := exec.LookPath("debootstrap")
 	if err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 
 	var includePkgs, debootstrapCmdArr []string
 	debootstrapCmdArr = append([]string{debootstrapPath}, debootstrapCmdArr...)
 
 	if err := getComprtIncludes(&includePkgs, cargs); err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 	if includePkgs != nil {
 		debootstrapCmdArr = append(debootstrapCmdArr, "--include="+strings.Join(includePkgs, ","))
@@ -622,7 +647,8 @@ func createComprt(cargs *cmdArgs) error {
 	debootstrapCmdArr = append(debootstrapCmdArr, cargs.codeName, cargs.target, cargs.mirror)
 
 	if err := copy(cargs.comprtConfigPath, filepath.Join(cargs.target, comprtConfigFile)); err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 
 	// inspired by:
@@ -633,20 +659,29 @@ func createComprt(cargs *cmdArgs) error {
 		debootstrapCmd.Stderr = os.Stderr
 	}
 	if err := debootstrapCmd.Start(); err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 	if err := debootstrapCmd.Wait(); err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 
 	exitChroot, err := Chroot(cargs.target)
 	if err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
+	defer func() {
+		if err := exitChroot(); err != nil {
+			errs = append(errs, err)
+		}
+	}()
 
 	shPath, err := exec.LookPath("sh")
 	if err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 	comprtConfigFileCmd := exec.Command(shPath, filepath.Join("/", comprtConfigFile))
 	if !cargs.quiet {
@@ -654,15 +689,14 @@ func createComprt(cargs *cmdArgs) error {
 		comprtConfigFileCmd.Stderr = os.Stderr
 	}
 	if err := comprtConfigFileCmd.Start(); err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 	if err := comprtConfigFileCmd.Wait(); err != nil {
-		return err
+		errs = append(errs, err)
+		return
 	}
 
-	if err := exitChroot(); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -671,19 +705,17 @@ func main() {
 	cargs := &cmdArgs{ // sets defaults
 		comprtConfigPath:   filepath.Join(".", comprtConfigFile),
 		comprtIncludesPath: filepath.Join(".", comprtIncludeFile),
-		passthrough:        false,
-		quiet:              false,
 	}
 	cargs.parseCmdArgs()
 
 	switch cargs.command {
 	case "chroot":
-		if err := runInteractiveChroot(cargs.target); err != nil {
-			log.Panic(err)
+		if errs := runInteractiveChroot(cargs.target); errs != nil {
+			log.Panic(errs)
 		}
 	case "create":
-		if err := createComprt(cargs); err != nil {
-			log.Panic(err)
+		if errs := createComprt(cargs); errs != nil {
+			log.Panic(errs)
 		}
 	}
 

@@ -206,6 +206,21 @@ func TestChroot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		if err := exitChroot(); err != nil {
+			t.Fatal(err)
+		}
+
+		var rootStat2 *syscall.Stat_t = &syscall.Stat_t{}
+		statErr2 := stat("/", rootStat2)
+		if statErr2 != nil {
+			t.Fatal(err)
+		}
+
+		if rootStat2.Ino != parentRootStat.Ino {
+			t.Fatal("was unable to exit chroot")
+		}
+	}()
 
 	var rootStat *syscall.Stat_t = &syscall.Stat_t{}
 	statErr := stat("/", rootStat)
@@ -215,20 +230,6 @@ func TestChroot(t *testing.T) {
 
 	if rootStat.Ino == parentRootStat.Ino {
 		t.Fatal("was unable to chroot into target")
-	}
-
-	if err := exitChroot(); err != nil {
-		t.Fatal(err)
-	}
-
-	var rootStat2 *syscall.Stat_t = &syscall.Stat_t{}
-	statErr2 := stat("/", rootStat2)
-	if statErr2 != nil {
-		t.Fatal(err)
-	}
-
-	if rootStat2.Ino != parentRootStat.Ino {
-		t.Fatal("was unable to exit chroot")
 	}
 }
 
