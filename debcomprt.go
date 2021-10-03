@@ -36,14 +36,16 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// TODO(cavcrosby): Remove comprtIncludeFile extension, as the other program
-// specific files do not have a extension.
-
+// Derived uid based on debian's package policy for uids/gids. For reference:
+// https://www.debian.org/doc/debian-policy/ch-opersys.html#uid-and-gid-classes
+//
+// The uid serves as a default user to 'login in as' when choosing to chroot into
+// a comprt.
 const (
 	comprtConfigFile      = "comprtconfig"
 	comprtConfigsRepoName = "comprtconfigs"
 	comprtConfigsRepoUrl  = "https://github.com/cavcrosby/comprtconfigs"
-	comprtIncludeFile     = "comprtinc.txt"
+	comprtIncludeFile     = "comprtinc"
 	defaultComprtUid      = 1224
 	defaultDebianMirror   = "http://ftp.us.debian.org/debian/"
 	defaultUbuntuMirror   = "http://archive.ubuntu.com/ubuntu/"
@@ -155,8 +157,6 @@ func (cargs *cmdArgs) parseCmdArgs() {
 	}
 	os.Setenv("DEBCOMPRT_DEFAULT_LOGIN_UID", strconv.Itoa(defaultComprtUid))
 
-	// TODO(cavcrosby): Pretty sure --quiet was never implemented in any part of the
-	// code!
 	app := &cli.App{
 		Name:            progname,
 		Usage:           "manages debian compartments (comprt), an underlying 'target' generated from debootstrap",
@@ -326,9 +326,9 @@ func stringInArr(strArg string, arr *[]string) bool {
 // Look in a file that has some form of standardized file format
 // (e.g. /etc/passwd, /etc/os-release) and locate a 'field' among
 // the rows based on a regex for another field. Fields are a sequence
-// of elements separated by a field separator.
-func locateField(filePath, fieldSep string, matchIndex, returnIndex int, matchRegex *regexp.Regexp) (string, error) {
-	file, err := os.Open(filePath)
+// of elements separated by a field separator (or a character).
+func locateField(fPath, fieldSep string, matchIndex, returnIndex int, matchRegex *regexp.Regexp) (string, error) {
+	file, err := os.Open(fPath)
 	if err != nil {
 		return "", err
 	}
@@ -493,6 +493,12 @@ func Chroot(target string) (func() error, error) {
 		for _, filesys := range fileSystemsToBind {
 			var retries int
 			for {
+				// DISCUSS(cavcrosby): would using golang's logging package be beneficial? Its
+				// either that, or just using the schmorgesborg of io utilities.
+				//
+				// Even with --quiet implemented, in some cases like the below, output should
+				// still go to where an operator will see it.
+
 				err := syscall.Unmount(filepath.Join(target, filesys), 0x0)
 				if err == nil {
 					break
@@ -545,11 +551,18 @@ func Chroot(target string) (func() error, error) {
 // Provide an interactive shell into the comprt.
 func runInteractiveChroot(target string) error {
 	var uidRegex *regexp.Regexp = regexp.MustCompile(strconv.Itoa(defaultComprtUid))
-	defaultComprtUsername, err := locateField(filepath.Join(target, "/etc/passwd"), ":", 2, 0, uidRegex)
-	if err != nil{
+	var loginNameIndex, uidIndex int = 0, 2
+	defaultComprtUsername, err := locateField(
+		filepath.Join(target, "/etc/passwd"),
+		":",
+		uidIndex,
+		loginNameIndex,
+		uidRegex,
+	)
+	if err != nil {
 		return err
 	}
-	
+
 	exitChroot, err := Chroot(target)
 	if err != nil {
 		return err
@@ -615,8 +628,10 @@ func createComprt(cargs *cmdArgs) error {
 	// inspired by:
 	// https://stackoverflow.com/questions/39173430/how-to-print-the-realtime-output-of-running-child-process-in-go
 	debootstrapCmd := exec.Command(debootstrapPath, debootstrapCmdArr[1:]...)
-	debootstrapCmd.Stdout = os.Stdout
-	debootstrapCmd.Stderr = os.Stderr
+	if !cargs.quiet {
+		debootstrapCmd.Stdout = os.Stdout
+		debootstrapCmd.Stderr = os.Stderr
+	}
 	if err := debootstrapCmd.Start(); err != nil {
 		return err
 	}
@@ -634,8 +649,10 @@ func createComprt(cargs *cmdArgs) error {
 		return err
 	}
 	comprtConfigFileCmd := exec.Command(shPath, filepath.Join("/", comprtConfigFile))
-	comprtConfigFileCmd.Stdout = os.Stdout
-	comprtConfigFileCmd.Stderr = os.Stderr
+	if !cargs.quiet {
+		comprtConfigFileCmd.Stdout = os.Stdout
+		comprtConfigFileCmd.Stderr = os.Stderr
+	}
 	if err := comprtConfigFileCmd.Start(); err != nil {
 		return err
 	}

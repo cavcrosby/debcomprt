@@ -39,9 +39,9 @@ var pkgs []string = []string{"autoconf", "git", "wget"}
 
 // createTestFile creates a test file that is solely meant for testing. This file
 // should be created on the intentions of allowing any test to access it.
-func createTestFile(filePath, contents string) error {
+func createTestFile(fPath, contents string) error {
 	err := ioutil.WriteFile(
-		filePath,
+		fPath,
 		[]byte(contents),
 		ModeFile|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
 	)
@@ -52,12 +52,9 @@ func createTestFile(filePath, contents string) error {
 	return nil
 }
 
-// DISCUSS(cavcrosby): some variable names only differ from packages by the case
-// of the variable/identifier name...might be an issue.
-
 // Get a file's system status.
-func stat(filePath string, stat *syscall.Stat_t) error {
-	fileInfo, err := os.Stat(filePath)
+func stat(fPath string, stat *syscall.Stat_t) error {
+	fileInfo, err := os.Stat(fPath)
 	if err != nil {
 		return err
 	}
