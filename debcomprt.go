@@ -36,21 +36,23 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// Derived uid based on debian's package policy for uids/gids. For reference:
-// https://www.debian.org/doc/debian-policy/ch-opersys.html#uid-and-gid-classes
-//
-// The uid serves as a default user to 'login in as' when choosing to chroot into
-// a comprt.
 const (
 	comprtConfigFile      = "comprtconfig"
 	comprtConfigsRepoName = "comprtconfigs"
 	comprtConfigsRepoUrl  = "https://github.com/cavcrosby/comprtconfigs"
 	comprtIncludeFile     = "comprtinc"
-	defaultComprtUid      = 1224
-	defaultDebianMirror   = "http://ftp.us.debian.org/debian/"
-	defaultUbuntuMirror   = "http://archive.ubuntu.com/ubuntu/"
-	noAlias               = "none"
-	progname              = "debcomprt"
+
+	// Derived uid based on debian's package policy for uids/gids. For reference:
+	// https://www.debian.org/doc/debian-policy/ch-opersys.html#uid-and-gid-classes
+	//
+	// The uid serves as a default user to 'login in as' when choosing to chroot into
+	// a comprt.
+	defaultComprtUid = 1224
+
+	defaultDebianMirror = "http://ftp.us.debian.org/debian/"
+	defaultUbuntuMirror = "http://archive.ubuntu.com/ubuntu/"
+	noAlias             = "none"
+	progname            = "debcomprt"
 )
 
 // inspired by:
@@ -106,6 +108,7 @@ type cmdArgs struct {
 	command            string
 	comprtConfigPath   string
 	comprtIncludesPath string
+	cryptPassword      string
 	helpFlagPassedIn   bool
 	mirror             string
 	passthrough        bool
@@ -126,6 +129,8 @@ func (cargs *cmdArgs) parseCmdArgs() {
 			continue
 		} else if val == "--" {
 			break
+		} else if stringInArr(val, &[]string{"-a", "-alias", "--alias"}) && stringInArr(val, &[]string{"-p", "-crypt-password", "--crypt-password"}) {
+			log.Panic(errors.New("--crypt-password cannot be used with --alias"))
 		} else if stringInArr(val, &[]string{"-h", "-help", "--help"}) {
 			cargs.helpFlagPassedIn = true
 		} else if stringInArr(val, &[]string{"-passthrough", "--passthrough"}) {
@@ -157,6 +162,9 @@ func (cargs *cmdArgs) parseCmdArgs() {
 	}
 	os.Setenv("DEBCOMPRT_DEFAULT_LOGIN_UID", strconv.Itoa(defaultComprtUid))
 
+	// TODO(cavcrosby): subcommands are not optional, enforce this in the code. As
+	// running the program with a non-subcommand argument exits with a status code of
+	// 0.
 	app := &cli.App{
 		Name:            progname,
 		Usage:           "manages debian compartments (comprt), an underlying 'target' generated from debootstrap",
@@ -196,6 +204,7 @@ func (cargs *cmdArgs) parseCmdArgs() {
 					},
 					&cli.BoolFlag{
 						Name:        "alias-envvar",
+						Value:       false,
 						Aliases:     []string{"e"},
 						Usage:       "preprocess all the aliases files by evaluating these env vars (ex. <flag> foo=bar <flag> bar=baz)",
 						Destination: &cargs.preprocessAliases,
@@ -226,6 +235,14 @@ func (cargs *cmdArgs) parseCmdArgs() {
 						Value:       cargs.comprtConfigPath,
 						Usage:       "alternative `PATH` to comptr config file",
 						Destination: &cargs.comprtConfigPath,
+					},
+					// TODO(cavcrosby): someone please test me...I think thats how it went.
+					&cli.StringFlag{
+						Name:        "crypt-password",
+						Aliases:     []string{"p"},
+						Value:       "",
+						Usage:       "set a password for the default debcomprt user",
+						Destination: &cargs.cryptPassword,
 					},
 				},
 				Action: func(context *cli.Context) error {
@@ -428,6 +445,10 @@ func getComprtIncludes(includePkgs *[]string, cargs *cmdArgs) error {
 // of the chroot will be returned.
 func Chroot(target string) (func() error, error) {
 	var fileSystemsToBind []string = []string{"/sys", "/proc", "/dev", "/dev/pts"}
+
+	// Returning back to the residing directory before entering the chroot.
+	// For reference:
+	// https://devsidestory.com/exit-from-a-chroot-with-golang/
 	returnDir, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -508,7 +529,6 @@ func Chroot(target string) (func() error, error) {
 				//
 				// Even with --quiet implemented, in some cases like the below, output should
 				// still go to where an operator will see it.
-
 				err := syscall.Unmount(filepath.Join(target, filesys), 0x0)
 				if err == nil {
 					break
@@ -609,13 +629,13 @@ func runInteractiveChroot(target string) (errs []error) {
 		errs = append(errs, err)
 		return
 	}
-
-	if err := exitChroot(); err != nil {
-		errs = append(errs, err)
-		return
-	}
 	return nil
 }
+
+// DISCUSS(cavcrosby): it's rather hard to determine what arguments this function
+// needs to work (aside a data structure containing many configurations). I would
+// think at most, the name of the function and its signature would be enough to
+// determine most of what to expect out of a function.
 
 // Create a debian comprt.
 func createComprt(cargs *cmdArgs) (errs []error) {
@@ -695,6 +715,67 @@ func createComprt(cargs *cmdArgs) (errs []error) {
 	if err := comprtConfigFileCmd.Wait(); err != nil {
 		errs = append(errs, err)
 		return
+	}
+
+	if cargs.alias == noAlias {
+		groupAddPath, err := exec.LookPath("groupadd")
+		if err != nil {
+			errs = append(errs, err)
+			return
+		}
+
+		groupAddCmd := exec.Command(
+			groupAddPath,
+			"--gid",
+			strconv.Itoa(defaultComprtUid),
+			"debcomprt",
+		)
+		if !cargs.quiet {
+			groupAddCmd.Stdout = os.Stdout
+			groupAddCmd.Stderr = os.Stderr
+		}
+		if err := groupAddCmd.Start(); err != nil {
+			errs = append(errs, err)
+			return
+		}
+		if err := groupAddCmd.Wait(); err != nil {
+			errs = append(errs, err)
+			return
+		}
+
+		userAddPath, err := exec.LookPath("useradd")
+		if err != nil {
+			errs = append(errs, err)
+			return
+		}
+
+		userAddCmd := exec.Command(
+			userAddPath,
+			"--create-home",
+			"--home-dir",
+			"/home/debcomprt",
+			"--uid",
+			strconv.Itoa(defaultComprtUid),
+			"--gid",
+			strconv.Itoa(defaultComprtUid),
+			"--shell",
+			"/bin/bash",
+			"debcomprt",
+			"--password",
+			cargs.cryptPassword,
+		)
+		if !cargs.quiet {
+			userAddCmd.Stdout = os.Stdout
+			userAddCmd.Stderr = os.Stderr
+		}
+		if err := userAddCmd.Start(); err != nil {
+			errs = append(errs, err)
+			return
+		}
+		if err := userAddCmd.Wait(); err != nil {
+			errs = append(errs, err)
+			return
+		}
 	}
 
 	return nil

@@ -15,15 +15,18 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -71,6 +74,19 @@ func stat(fPath string, stat *syscall.Stat_t) error {
 	// on the implementation. For reference: https://pkg.go.dev/syscall#Stat_t
 	*stat = *fileStat
 	return nil
+}
+
+// Setup the program's data directory. Ensure any validation/checking is done here.
+func setupProgDataDir() (string, error) {
+	progDataDir := appdirs.SiteDataDir(progname, "", "")
+	_, err := os.Stat(progDataDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
+	} else if err != nil {
+		return "", err
+	}
+
+	return progDataDir, nil
 }
 
 func TestCopy(t *testing.T) {
@@ -233,7 +249,7 @@ func TestChroot(t *testing.T) {
 	}
 }
 
-func TestCreateIntegration(t *testing.T) {
+func TestCreateCommandIntegration(t *testing.T) {
 	progDataDir := appdirs.SiteDataDir(progname, "", "")
 	_, err := os.Stat(progDataDir)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -248,14 +264,14 @@ func TestCreateIntegration(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDirPath)
 
-	var codename, target, chrootTestFilePath, comprtConfigFileContents string
+	var codename, target, comprtConfigFileChrootPath, comprtConfigFileContents string
 	codename = "buster"
 	target = filepath.Join(tempDirPath, "testChroot")
-	chrootTestFilePath = filepath.Join("foo")
+	comprtConfigFileChrootPath = filepath.Join("foo")
 	comprtConfigFileContents = fmt.Sprintf(`#!/bin/sh
 
 touch %s
-	`, chrootTestFilePath)
+	`, comprtConfigFileChrootPath)
 
 	cargs := &cmdArgs{
 		comprtConfigPath:   filepath.Join(tempDirPath, comprtConfigFile),
@@ -293,27 +309,18 @@ touch %s
 		t.Fatal(err)
 	}
 
-	// returning back to the residing directory before entering the chroot,
-	// for reference:
-	// https://devsidestory.com/exit-from-a-chroot-with-golang/
-	pwd, err := os.Getwd()
+	exitChroot, err := Chroot(target)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fdPwd, err := os.Open(pwd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer fdPwd.Close()
+	defer func() {
+		if err := exitChroot(); err != nil {
+			t.Fatal(err)
+		}
+	}()
 
-	if err := syscall.Chroot(target); err != nil {
-		t.Fatal(err)
-	}
-	if err := syscall.Chdir("/"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(chrootTestFilePath); errors.Is(err, fs.ErrNotExist) {
-		t.Fatal(err)
+	if _, err := os.Stat(comprtConfigFileChrootPath); errors.Is(err, fs.ErrNotExist) {
+		t.Error(err)
 	}
 
 	for _, pkg := range pkgs {
@@ -330,9 +337,98 @@ touch %s
 			t.Error(err)
 		}
 	}
+}
 
-	fdPwd.Chdir()
-	if err := syscall.Chroot("."); err != nil {
+func TestChrootCommandIntegration(t *testing.T) {
+
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	progDataDir, err := setupProgDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tempDirPath, err := os.MkdirTemp(progDataDir, "_"+tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDirPath)
+
+	var codename, target, comprtConfigFileChrootPath, comprtConfigFileContents string
+	codename = "buster"
+	target = filepath.Join(tempDirPath, "testChroot")
+	comprtConfigFileChrootPath = filepath.Join("foo")
+	comprtConfigFileContents = fmt.Sprintf(`#!/bin/sh
+
+touch %s
+	`, comprtConfigFileChrootPath)
+
+	cargs := &cmdArgs{
+		alias:            noAlias,
+		codeName:         codename,
+		comprtConfigPath: filepath.Join(tempDirPath, comprtConfigFile),
+		mirror:           defaultMirrorMappings[codename],
+		target:           target,
+	}
+
+	mkTargetErr := os.Mkdir(
+		target,
+		os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
+	)
+	if mkTargetErr != nil {
+		t.Fatal(mkTargetErr)
+	}
+
+	if err := createTestFile(cargs.comprtConfigPath, comprtConfigFileContents); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := createComprt(cargs); err != nil {
+		t.Fatal(err)
+	}
+
+	debcomprtCmd := exec.Command("debcomprt", "chroot", target)
+	if testing.Verbose() {
+		debcomprtCmd.Stderr = os.Stderr
+	}
+	debcomprtCmdStdin, err := debcomprtCmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	debcomprtCmdStdout, err := debcomprtCmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := debcomprtCmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	_, ioErr := io.WriteString(debcomprtCmdStdin, "id --user\n")
+	if ioErr != nil {
+		t.Fatal(ioErr)
+	}
+
+	r := bufio.NewReader(debcomprtCmdStdout)
+	debcomprtOut, err := r.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		t.Fatal(err)
+	} else if debcomprtOut == "" {
+		t.Fatal("unable to get effective uid of shell running in chroot")
+	}
+
+	uid, err := strconv.Atoi(strings.TrimSuffix(debcomprtOut, "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uid != defaultComprtUid {
+		t.Fatal("was unable to chroot into target with the default comprt uid!")
+	}
+	// needed to send EOF to the interactive shell
+	debcomprtCmdStdin.Close()
+
+	if err := debcomprtCmd.Wait(); err != nil {
 		t.Fatal(err)
 	}
 }
