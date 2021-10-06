@@ -48,6 +48,7 @@ const (
 	// The uid serves as a default user to 'login in as' when choosing to chroot into
 	// a comprt.
 	defaultComprtUid = 1224
+	defaultComprtUserName = "debcomprt"
 
 	defaultDebianMirror = "http://ftp.us.debian.org/debian/"
 	defaultUbuntuMirror = "http://archive.ubuntu.com/ubuntu/"
@@ -236,12 +237,11 @@ func (cargs *cmdArgs) parseCmdArgs() {
 						Usage:       "alternative `PATH` to comptr config file",
 						Destination: &cargs.comprtConfigPath,
 					},
-					// TODO(cavcrosby): someone please test me...I think thats how it went.
 					&cli.StringFlag{
 						Name:        "crypt-password",
 						Aliases:     []string{"p"},
 						Value:       "",
-						Usage:       "set a password for the default debcomprt user",
+						Usage:       fmt.Sprintf("set a password for the default comprt user: %v", defaultComprtUserName),
 						Destination: &cargs.cryptPassword,
 					},
 				},
@@ -728,7 +728,7 @@ func createComprt(cargs *cmdArgs) (errs []error) {
 			groupAddPath,
 			"--gid",
 			strconv.Itoa(defaultComprtUid),
-			"debcomprt",
+			defaultComprtUserName,
 		)
 		if !cargs.quiet {
 			groupAddCmd.Stdout = os.Stdout
@@ -760,7 +760,7 @@ func createComprt(cargs *cmdArgs) (errs []error) {
 			strconv.Itoa(defaultComprtUid),
 			"--shell",
 			"/bin/bash",
-			"debcomprt",
+			defaultComprtUserName,
 			"--password",
 			cargs.cryptPassword,
 		)
@@ -791,6 +791,10 @@ func main() {
 
 	switch cargs.command {
 	case "chroot":
+		// TODO(cavcrosby): when exiting a shell session via crtl+D (or just sending EOF),
+		// the function returns an err just saying that the process returns a exit code
+		// of 1. Look into this because it's possible that there is no real concern here.
+		// If there is no concern, then in those cases, the err should just be ignored.
 		if errs := runInteractiveChroot(cargs.target); errs != nil {
 			log.Panic(errs)
 		}
