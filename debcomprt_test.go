@@ -38,17 +38,22 @@ const (
 	tempDir = "debcomprt"
 )
 
-var pkgs []string = []string{"autoconf", "git", "wget"}
+var testPkgs []string = []string{"autoconf", "git", "wget"}
+var testCodeCame = "buster"
+var testComprtConfigFileChrootPath = filepath.Join("foo")
+var testComprtConfigFileContents = fmt.Sprintf(`#!/bin/sh
+
+touch %s
+	`, testComprtConfigFileChrootPath)
 
 // createTestFile creates a test file that is solely meant for testing. This file
-// should be created on the intentions of allowing any test to access it.
+// is created on the intentions of allowing anything to access it.
 func createTestFile(fPath, contents string) error {
-	err := ioutil.WriteFile(
+	if err := ioutil.WriteFile(
 		fPath,
 		[]byte(contents),
 		ModeFile|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
-	)
-	if err != nil {
+	); err != nil {
 		return err
 	}
 
@@ -79,8 +84,7 @@ func stat(fPath string, stat *syscall.Stat_t) error {
 // Setup the program's data directory. Ensure any validation/checking is done here.
 func setupProgDataDir() (string, error) {
 	progDataDir := appdirs.SiteDataDir(progname, "", "")
-	_, err := os.Stat(progDataDir)
-	if errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(progDataDir); errors.Is(err, fs.ErrNotExist) {
 		os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
 	} else if err != nil {
 		return "", err
@@ -92,7 +96,7 @@ func setupProgDataDir() (string, error) {
 func TestCopy(t *testing.T) {
 	// inspired by:
 	// https://stackoverflow.com/questions/29505089/how-can-i-compare-two-files-in-golang#answer-29528747
-	tempDirPath, err := ioutil.TempDir("", tempDir)
+	tempDirPath, err := os.MkdirTemp("", "_"+tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +129,7 @@ func TestCopy(t *testing.T) {
 }
 
 func TestCopyDestAlreadyExists(t *testing.T) {
-	tempDirPath, err := ioutil.TempDir("", tempDir)
+	tempDirPath, err := os.MkdirTemp("", "_"+tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,13 +147,10 @@ func TestCopyDestAlreadyExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	errors.Is(err, syscall.EBUSY)
-	copyErr := copy(filePath1, filePath2)
-	if copyErr == nil {
+	if err := copy(filePath1, filePath2); err == nil {
 		t.Fatal("dest was overwritten with second call to copy!")
-	}
-	if !errors.Is(copyErr, syscall.EEXIST) {
-		t.Fatalf("a non-expected error has occurred: %d", copyErr)
+	} else if !errors.Is(err, syscall.EEXIST) {
+		t.Fatalf("a non-expected error has occurred: %d", err)
 	}
 }
 
@@ -169,38 +170,36 @@ func TestGetProgData(t *testing.T) {
 	if _, err := os.Stat(progDataDir); errors.Is(err, fs.ErrNotExist) {
 		t.Fatal(err)
 	}
-
 	if _, err := os.Stat(comprtConfigsRepoPath); errors.Is(err, fs.ErrNotExist) {
 		t.Fatal(err)
 	}
 }
 
 func TestGetComprtIncludes(t *testing.T) {
-	tempDirPath, err := ioutil.TempDir("", "_"+tempDir)
+	tempDirPath, err := os.MkdirTemp("", "_"+tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tempDirPath)
 
-	pkgsByteString := []byte(strings.Join(pkgs, "\n"))
 	cargs := &cmdArgs{
 		comprtConfigPath:   filepath.Join(tempDirPath, comprtConfigFile),
 		comprtIncludesPath: filepath.Join(tempDirPath, comprtIncludeFile),
 	}
 
-	if err := createTestFile(cargs.comprtIncludesPath, strings.Join(pkgs, "\n")); err != nil {
+	if err := createTestFile(cargs.comprtIncludesPath, strings.Join(testPkgs, "\n")); err != nil {
 		t.Fatal(err)
 	}
 
 	var includePkgs []string
+	pkgsByteString := []byte(strings.Join(testPkgs, "\n"))
 	if getComprtIncludes(&includePkgs, cargs); !bytes.Equal([]byte(strings.Join(includePkgs, "\n")), pkgsByteString) {
 		t.Fatalf("found the following packages \n%s", strings.Join(includePkgs, "\n"))
 	}
 }
 
 func TestChroot(t *testing.T) {
-	// e.g. /tmp/${tempDir} on Unix systems
-	tempDirPath, err := ioutil.TempDir("", "_"+tempDir)
+	tempDirPath, err := os.MkdirTemp("", "_"+tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,11 +212,12 @@ func TestChroot(t *testing.T) {
 	defer root.Close()
 
 	var parentRootStat *syscall.Stat_t = &syscall.Stat_t{}
-	parentStatErr := stat("/", parentRootStat)
-	if parentStatErr != nil {
+	if err := stat("/", parentRootStat); err != nil {
 		t.Fatal(err)
 	}
 
+	// For reference on determining if the process is in a chroot:
+	// https://unix.stackexchange.com/questions/14345/how-do-i-tell-im-running-in-a-chroot
 	exitChroot, err := Chroot(tempDirPath)
 	if err != nil {
 		t.Fatal(err)
@@ -228,8 +228,7 @@ func TestChroot(t *testing.T) {
 		}
 
 		var rootStat2 *syscall.Stat_t = &syscall.Stat_t{}
-		statErr2 := stat("/", rootStat2)
-		if statErr2 != nil {
+		if err := stat("/", rootStat2); err != nil {
 			t.Fatal(err)
 		}
 
@@ -239,8 +238,7 @@ func TestChroot(t *testing.T) {
 	}()
 
 	var rootStat *syscall.Stat_t = &syscall.Stat_t{}
-	statErr := stat("/", rootStat)
-	if statErr != nil {
+	if err := stat("/", rootStat); err != nil {
 		t.Fatal(err)
 	}
 
@@ -250,11 +248,12 @@ func TestChroot(t *testing.T) {
 }
 
 func TestCreateCommandIntegration(t *testing.T) {
-	progDataDir := appdirs.SiteDataDir(progname, "", "")
-	_, err := os.Stat(progDataDir)
-	if errors.Is(err, fs.ErrNotExist) {
-		os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
-	} else if err != nil {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	progDataDir, err := setupProgDataDir()
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -264,40 +263,25 @@ func TestCreateCommandIntegration(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDirPath)
 
-	var codename, target, comprtConfigFileChrootPath, comprtConfigFileContents string
-	codename = "buster"
-	target = filepath.Join(tempDirPath, "testChroot")
-	comprtConfigFileChrootPath = filepath.Join("foo")
-	comprtConfigFileContents = fmt.Sprintf(`#!/bin/sh
-
-touch %s
-	`, comprtConfigFileChrootPath)
-
-	cargs := &cmdArgs{
-		comprtConfigPath:   filepath.Join(tempDirPath, comprtConfigFile),
-		comprtIncludesPath: filepath.Join(tempDirPath, comprtIncludeFile),
-	}
-
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	mkTargetErr := os.Mkdir(
-		target,
+	var testTarget string = filepath.Join(tempDirPath, "testChroot")
+	if err := os.Mkdir(
+		testTarget,
 		os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
-	)
-	if mkTargetErr != nil {
-		t.Fatal(mkTargetErr)
-	}
-
-	if err := createTestFile(cargs.comprtIncludesPath, strings.Join(pkgs, "\n")); err != nil {
-		t.Fatal(err)
-	}
-	if err := createTestFile(cargs.comprtConfigPath, comprtConfigFileContents); err != nil {
+	); err != nil {
 		t.Fatal(err)
 	}
 
-	debcomprtCmd := exec.Command("debcomprt", "create", "--includes-path", cargs.comprtIncludesPath, "--config-path", cargs.comprtConfigPath, codename, target)
+	var comprtIncludesPath string = filepath.Join(tempDirPath, comprtIncludeFile)
+	if err := createTestFile(comprtIncludesPath, strings.Join(testPkgs, "\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	var comprtConfigPath string = filepath.Join(tempDirPath, comprtConfigFile)
+	if err := createTestFile(comprtConfigPath, testComprtConfigFileContents); err != nil {
+		t.Fatal(err)
+	}
+
+	debcomprtCmd := exec.Command("debcomprt", "create", "--includes-path", comprtIncludesPath, "--config-path", comprtConfigPath, testCodeCame, testTarget)
 	if testing.Verbose() {
 		debcomprtCmd.Stdout = os.Stdout
 		debcomprtCmd.Stderr = os.Stderr
@@ -309,7 +293,7 @@ touch %s
 		t.Fatal(err)
 	}
 
-	exitChroot, err := Chroot(target)
+	exitChroot, err := Chroot(testTarget)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,11 +303,11 @@ touch %s
 		}
 	}()
 
-	if _, err := os.Stat(comprtConfigFileChrootPath); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(testComprtConfigFileChrootPath); errors.Is(err, fs.ErrNotExist) {
 		t.Error(err)
 	}
 
-	for _, pkg := range pkgs {
+	for _, pkg := range testPkgs {
 		dpkgQueryCmd := exec.Command("dpkg-query", "--show", pkg)
 		if testing.Verbose() {
 			dpkgQueryCmd.Stdout = os.Stdout
@@ -340,7 +324,6 @@ touch %s
 }
 
 func TestChrootCommandIntegration(t *testing.T) {
-
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -356,32 +339,23 @@ func TestChrootCommandIntegration(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDirPath)
 
-	var codename, target, comprtConfigFileChrootPath, comprtConfigFileContents string
-	codename = "buster"
-	target = filepath.Join(tempDirPath, "testChroot")
-	comprtConfigFileChrootPath = filepath.Join("foo")
-	comprtConfigFileContents = fmt.Sprintf(`#!/bin/sh
-
-touch %s
-	`, comprtConfigFileChrootPath)
-
+	var testTarget string = filepath.Join(tempDirPath, "testChroot")
 	cargs := &cmdArgs{
 		alias:            noAlias,
-		codeName:         codename,
+		codeName:         testCodeCame,
 		comprtConfigPath: filepath.Join(tempDirPath, comprtConfigFile),
-		mirror:           defaultMirrorMappings[codename],
-		target:           target,
+		mirror:           defaultMirrorMappings[testCodeCame],
+		target:           testTarget,
 	}
 
-	mkTargetErr := os.Mkdir(
-		target,
+	if err := os.Mkdir(
+		testTarget,
 		os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
-	)
-	if mkTargetErr != nil {
-		t.Fatal(mkTargetErr)
+	); err != nil {
+		t.Fatal(err)
 	}
 
-	if err := createTestFile(cargs.comprtConfigPath, comprtConfigFileContents); err != nil {
+	if err := createTestFile(cargs.comprtConfigPath, testComprtConfigFileContents); err != nil {
 		t.Fatal(err)
 	}
 
@@ -389,7 +363,7 @@ touch %s
 		t.Fatal(err)
 	}
 
-	debcomprtCmd := exec.Command("debcomprt", "chroot", target)
+	debcomprtCmd := exec.Command("debcomprt", "chroot", testTarget)
 	if testing.Verbose() {
 		debcomprtCmd.Stderr = os.Stderr
 	}
@@ -405,16 +379,16 @@ touch %s
 	if err := debcomprtCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	_, ioErr := io.WriteString(debcomprtCmdStdin, "id --user\n")
-	if ioErr != nil {
-		t.Fatal(ioErr)
+	if _, err := io.WriteString(debcomprtCmdStdin, "id --user\n"); err != nil {
+		t.Fatal(err)
 	}
 
 	r := bufio.NewReader(debcomprtCmdStdout)
 	debcomprtOut, err := r.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		t.Fatal(err)
-	} else if debcomprtOut == "" {
+	}
+	if debcomprtOut == "" {
 		t.Fatal("unable to get effective uid of shell running in chroot")
 	}
 
