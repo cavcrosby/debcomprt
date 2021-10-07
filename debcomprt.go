@@ -47,7 +47,7 @@ const (
 	//
 	// The uid serves as a default user to 'login in as' when choosing to chroot into
 	// a comprt.
-	defaultComprtUid = 1224
+	defaultComprtUid      = 1224
 	defaultComprtUserName = "debcomprt"
 
 	defaultDebianMirror = "http://ftp.us.debian.org/debian/"
@@ -163,9 +163,6 @@ func (cargs *cmdArgs) parseCmdArgs() {
 	}
 	os.Setenv("DEBCOMPRT_DEFAULT_LOGIN_UID", strconv.Itoa(defaultComprtUid))
 
-	// TODO(cavcrosby): subcommands are not optional, enforce this in the code. As
-	// running the program with a non-subcommand argument exits with a status code of
-	// 0.
 	app := &cli.App{
 		Name:            progname,
 		Usage:           "manages debian compartments (comprt), an underlying 'target' generated from debootstrap",
@@ -275,7 +272,7 @@ func (cargs *cmdArgs) parseCmdArgs() {
 			},
 		},
 		Action: func(context *cli.Context) error {
-			if context.NArg() < 1 {
+			if context.NArg() < 1 || context.Command.Name == "" {
 				cli.ShowAppHelp(context)
 				os.Exit(1)
 			}
@@ -441,25 +438,11 @@ func getComprtIncludes(includePkgs *[]string, cargs *cmdArgs) error {
 	return nil
 }
 
-// Set the current process's root dir to target. A function to exit out
-// of the chroot will be returned.
-func Chroot(target string) (func() error, error) {
-	var fileSystemsToBind []string = []string{"/sys", "/proc", "/dev", "/dev/pts"}
-
-	// Returning back to the residing directory before entering the chroot.
-	// For reference:
-	// https://devsidestory.com/exit-from-a-chroot-with-golang/
-	returnDir, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-
-	root, err := os.Open("/")
-	if err != nil {
-		return nil, err
-	}
-
-	for _, filesys := range fileSystemsToBind {
+// Mount filesystems found on devices to their respective location(s) on the
+// target. As if the process had chooted to the target.
+func mountChrootFileSystems(devicesToBind []string, target string) ([]string, error) {
+	var fileSystemsMounted []string
+	for _, filesys := range devicesToBind {
 		mountPoint := filepath.Join(target, filesys)
 		if _, err := os.Stat(mountPoint); errors.Is(err, fs.ErrNotExist) {
 			var fileMode fs.FileMode
@@ -475,27 +458,124 @@ func Chroot(target string) (func() error, error) {
 			case "/dev/pts":
 				fileMode = os.ModeDir | (OS_USER_R | OS_USER_W | OS_USER_X | OS_GROUP_R | OS_GROUP_X | OS_OTH_R | OS_OTH_X)
 			}
-			os.Mkdir(
+			if err := os.Mkdir(
 				mountPoint,
 				fileMode,
-			)
+			); err != nil {
+				return fileSystemsMounted, err
+			}
 		}
-		// TODO(cavcrosby): it was discovered that exitChroot was not deferred in MANY cases. Meaning, if
-		// any part of the code after the Chroot returned an err, then exitChroot would
-		// never be called. Leading to possibly a defunct system. While I consider this
-		// part of the Chroot to primitive, there should be some attempt to clean up in
-		// case mounting or chrooting fail.
 		if err := syscall.Mount(filesys, filepath.Join(target, filesys), "", syscall.MS_BIND, ""); err != nil {
-			return nil, err
+			return fileSystemsMounted, err
 		}
+		fileSystemsMounted = append(fileSystemsMounted, filesys)
+	}
+	return fileSystemsMounted, nil
+}
+
+// Unmount filesystems found on devices starting in the tree hierarchy of the target.
+func unMountChrootFileSystems(devicesToBind []string, target string) error {
+	// Unfortunately unmounting filesystems is not as simple when working in code.
+	// It seems retrying to unmount the same filesystem previously attempted works
+	// after a short sleep. Ordering of the filesystems matter, for reference:
+	// https://unix.stackexchange.com/questions/61885/how-to-unmount-a-formerly-chrootd-filesystem#answer-234901
+	//
+	// MONITOR(cavcrosby): the syscall package is deprecated. At the time of writing, the replacement
+	// package for Unix systems is still not at a stable version. So this will need to
+	// be revisited at some point. Also for reference: golang.org/x/sys
+	reverse(&devicesToBind)
+	var fileSystemsUnmountBacklog []string = []string{}
+	for _, filesys := range devicesToBind {
+		var retries int
+		for {
+			// DISCUSS(cavcrosby): would using golang's logging package be beneficial? Its
+			// either that, or just using the schmorgesborg of io utilities.
+			//
+			// Even with --quiet implemented, in some cases like the below, output should
+			// still go to where an operator will see it.
+			err := syscall.Unmount(filepath.Join(target, filesys), 0x0)
+			if err == nil {
+				break
+			} else if retries == 1 {
+				fmt.Println(strings.Join([]string{progname, ": ", filesys, " does not want to unmount, will try again later"}, ""))
+				fileSystemsUnmountBacklog = append(fileSystemsUnmountBacklog, filesys)
+			} else if errors.Is(err, syscall.EBUSY) {
+				fmt.Println(strings.Join([]string{progname, ": ", filesys, " is busy, trying again"}, ""))
+				retries += 1
+				time.Sleep(1 * time.Second)
+			} else if errors.Is(err, syscall.EINVAL) {
+				fmt.Println(strings.Join([]string{progname, ": ", filesys, " is not a mount point...this may be an issue"}, ""))
+				break
+			} else {
+				fmt.Printf("%s: non-expected error thrown %d", progname, err)
+				return err
+			}
+
+		}
+	}
+
+	// in the rare event that a filesystem is being stubborn to unmount
+	for _, filesys := range fileSystemsUnmountBacklog {
+		var retries int
+		for {
+			err := syscall.Unmount(filepath.Join(target, filesys), 0x0)
+			if err == nil {
+				break
+			} else if retries == 1 {
+				fmt.Println(strings.Join([]string{progname, ": ", filesys, " does not want to unmount...AGAIN"}, ""))
+				return fmt.Errorf("%s: unable to unmount %v", progname, filesys)
+			} else if errors.Is(err, syscall.EBUSY) {
+				fmt.Println(strings.Join([]string{progname, ": ", filesys, " is busy...AGAIN, trying again"}, ""))
+				retries += 1
+				time.Sleep(2 * time.Second)
+			} else if errors.Is(err, syscall.EINVAL) {
+				fmt.Println(strings.Join([]string{progname, ": ", filesys, " is not a mount point...this may be an issue"}, ""))
+				break
+			} else {
+				fmt.Printf("%s: non-expected error thrown %d", progname, err)
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// Set the current process's root dir to target. A function to exit out
+// of the chroot will be returned.
+func Chroot(target string) (f func() error, errs []error) {
+	// Returning back to the residing directory before entering the chroot.
+	// For reference:
+	// https://devsidestory.com/exit-from-a-chroot-with-golang/
+	returnDir, err := os.Getwd()
+	if err != nil {
+		return nil, append(errs, err)
+	}
+
+	root, err := os.Open("/")
+	if err != nil {
+		return nil, append(errs, err)
+	}
+
+	var devicesToBind []string = []string{"/sys", "/proc", "/dev", "/dev/pts"}
+	fileSystemsMounted, err := mountChrootFileSystems(devicesToBind, target)
+	defer func() {
+		if errs != nil {
+			root.Close()
+			if err := unMountChrootFileSystems(fileSystemsMounted, target); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}()
+	if err != nil {
+		return nil, append(errs, err)
 	}
 
 	if err := syscall.Chroot(target); err != nil {
-		return nil, err
+		return nil, append(errs, err)
 	}
 
 	if err := syscall.Chdir("/"); err != nil { // makes sh happy, otherwise getcwd() for sh fails
-		return nil, err
+		return nil, append(errs, err)
 	}
 
 	return func() error {
@@ -511,67 +591,9 @@ func Chroot(target string) (func() error, error) {
 			return err
 		}
 
-		// Unfortunately unmounting filesystems is not as simple when working in code.
-		// It seems retrying to unmount the same filesystem previously attempted works
-		// after a short sleep. Ordering of the filesystems matter, for reference:
-		// https://unix.stackexchange.com/questions/61885/how-to-unmount-a-formerly-chrootd-filesystem#answer-234901
-		//
-		// MONITOR(cavcrosby): the syscall package is deprecated. At the time of writing, the replacement
-		// package for Unix systems is still not at a stable version. So this will need to
-		// be revisited at some point. Also for reference: golang.org/x/sys
-		reverse(&fileSystemsToBind)
-		var fileSystemsUnmountBacklog []string = []string{}
-		for _, filesys := range fileSystemsToBind {
-			var retries int
-			for {
-				// DISCUSS(cavcrosby): would using golang's logging package be beneficial? Its
-				// either that, or just using the schmorgesborg of io utilities.
-				//
-				// Even with --quiet implemented, in some cases like the below, output should
-				// still go to where an operator will see it.
-				err := syscall.Unmount(filepath.Join(target, filesys), 0x0)
-				if err == nil {
-					break
-				} else if retries == 1 {
-					fmt.Println(strings.Join([]string{progname, ": ", filesys, " does not want to unmount, will try again later"}, ""))
-					fileSystemsUnmountBacklog = append(fileSystemsUnmountBacklog, filesys)
-				} else if errors.Is(err, syscall.EBUSY) {
-					fmt.Println(strings.Join([]string{progname, ": ", filesys, " is busy, trying again"}, ""))
-					retries += 1
-					time.Sleep(1 * time.Second)
-				} else if errors.Is(err, syscall.EINVAL) {
-					fmt.Println(strings.Join([]string{progname, ": ", filesys, " is not a mount point...this may be an issue"}, ""))
-					break
-				} else {
-					fmt.Printf("%s: non-expected error thrown %d", progname, err)
-					return err
-				}
-
-			}
-		}
-
-		// in the rare event that a filesystem is being stubborn to unmount
-		for _, filesys := range fileSystemsUnmountBacklog {
-			var retries int
-			for {
-				err := syscall.Unmount(filepath.Join(target, filesys), 0x0)
-				if err == nil {
-					break
-				} else if retries == 1 {
-					fmt.Println(strings.Join([]string{progname, ": ", filesys, " does not want to unmount...AGAIN"}, ""))
-					return fmt.Errorf("%s: unable to unmount %v", progname, filesys)
-				} else if errors.Is(err, syscall.EBUSY) {
-					fmt.Println(strings.Join([]string{progname, ": ", filesys, " is busy...AGAIN, trying again"}, ""))
-					retries += 1
-					time.Sleep(2 * time.Second)
-				} else if errors.Is(err, syscall.EINVAL) {
-					fmt.Println(strings.Join([]string{progname, ": ", filesys, " is not a mount point...this may be an issue"}, ""))
-					break
-				} else {
-					fmt.Printf("%s: non-expected error thrown %d", progname, err)
-					return err
-				}
-			}
+		if err := unMountChrootFileSystems(devicesToBind, target); err != nil {
+			root.Close()
+			return err
 		}
 
 		return nil
@@ -594,9 +616,9 @@ func runInteractiveChroot(target string) (errs []error) {
 		return
 	}
 
-	exitChroot, err := Chroot(target)
-	if err != nil {
-		errs = append(errs, err)
+	exitChroot, errs := Chroot(target)
+	if errs != nil {
+		errs = append(errs, errs...)
 		return
 	}
 	defer func() {
@@ -687,9 +709,9 @@ func createComprt(cargs *cmdArgs) (errs []error) {
 		return
 	}
 
-	exitChroot, err := Chroot(cargs.target)
-	if err != nil {
-		errs = append(errs, err)
+	exitChroot, errs := Chroot(cargs.target)
+	if errs != nil {
+		errs = append(errs, errs...)
 		return
 	}
 	defer func() {
@@ -791,10 +813,6 @@ func main() {
 
 	switch cargs.command {
 	case "chroot":
-		// TODO(cavcrosby): when exiting a shell session via crtl+D (or just sending EOF),
-		// the function returns an err just saying that the process returns a exit code
-		// of 1. Look into this because it's possible that there is no real concern here.
-		// If there is no concern, then in those cases, the err should just be ignored.
 		if errs := runInteractiveChroot(cargs.target); errs != nil {
 			log.Panic(errs)
 		}

@@ -218,9 +218,9 @@ func TestChroot(t *testing.T) {
 
 	// For reference on determining if the process is in a chroot:
 	// https://unix.stackexchange.com/questions/14345/how-do-i-tell-im-running-in-a-chroot
-	exitChroot, err := Chroot(tempDirPath)
-	if err != nil {
-		t.Fatal(err)
+	exitChroot, errs := Chroot(tempDirPath)
+	if errs != nil {
+		t.Fatal(errs)
 	}
 	defer func() {
 		if err := exitChroot(); err != nil {
@@ -293,9 +293,9 @@ func TestCreateCommandIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	exitChroot, err := Chroot(testTarget)
-	if err != nil {
-		t.Fatal(err)
+	exitChroot, errs := Chroot(testTarget)
+	if errs != nil {
+		t.Fatal(errs)
 	}
 	defer func() {
 		if err := exitChroot(); err != nil {
