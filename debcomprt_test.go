@@ -38,9 +38,12 @@ const (
 	tempDir = "debcomprt"
 )
 
-var testPkgs []string = []string{"autoconf", "git", "wget"}
-var testCodeCame = "buster"
-var testComprtConfigFileChrootPath = filepath.Join("foo")
+var (
+	testPkgs = []string{"autoconf", "git", "wget"}
+	testCodeCame = "buster"
+	testComprtConfigFileChrootPath = filepath.Join("foo")
+)
+
 var testComprtConfigFileContents = fmt.Sprintf(`#!/bin/sh
 
 touch %s
@@ -193,7 +196,9 @@ func TestGetComprtIncludes(t *testing.T) {
 
 	var includePkgs []string
 	pkgsByteString := []byte(strings.Join(testPkgs, "\n"))
-	if getComprtIncludes(&includePkgs, cargs); !bytes.Equal([]byte(strings.Join(includePkgs, "\n")), pkgsByteString) {
+	getComprtIncludes(&includePkgs, cargs)
+	
+	if !bytes.Equal([]byte(strings.Join(includePkgs, "\n")), pkgsByteString) {
 		t.Fatalf("found the following packages \n%s", strings.Join(includePkgs, "\n"))
 	}
 }
