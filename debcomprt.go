@@ -103,7 +103,7 @@ var CustomOnUsageErrorFunc cli.OnUsageErrorFunc = func(context *cli.Context, err
 }
 
 // A type used to store command flag argument values and argument values.
-type cmdArgs struct {
+type progConfigs struct {
 	alias              string
 	codeName           string
 	command            string
@@ -120,8 +120,8 @@ type cmdArgs struct {
 }
 
 // Interprets the command arguments passed in. Saving particular flag/flag
-// arguments of interest into 'cargs'.
-func (cargs *cmdArgs) parseCmdArgs() {
+// arguments of interest into 'pconfs'.
+func (pconfs *progConfigs) parseCmdArgs() {
 	var localOsArgs []string = os.Args
 
 	// parses out flags to pass to debootstrap
@@ -130,15 +130,19 @@ func (cargs *cmdArgs) parseCmdArgs() {
 			continue
 		} else if val == "--" {
 			break
-		} else if stringInArr(val, &[]string{"-a", "-alias", "--alias"}) && stringInArr(val, &[]string{"-p", "-crypt-password", "--crypt-password"}) {
+		} else if stringsInArr([]string{"-a", "-alias", "--alias"}, &localOsArgs) &&
+			stringsInArr([]string{"-p", "-crypt-password", "--crypt-password"}, &localOsArgs) {
 			log.Panic(errors.New("--crypt-password cannot be used with --alias"))
+		} else if stringsInArr([]string{"-a", "-alias", "--alias"}, &localOsArgs) &&
+			stringsInArr([]string{"-c", "-config-path", "--config-path"}, &localOsArgs) {
+			log.Panic(errors.New("--config-path cannot be used with --alias"))
 		} else if stringInArr(val, &[]string{"-h", "-help", "--help"}) {
-			cargs.helpFlagPassedIn = true
+			pconfs.helpFlagPassedIn = true
 		} else if stringInArr(val, &[]string{"-passthrough", "--passthrough"}) {
 			// i + 1 to ignoring iterating over passthrough flag
 			for passthroughIndex, passthroughValue := range localOsArgs[i+1:] {
 				if strings.HasPrefix(passthroughValue, "-") {
-					cargs.passThroughFlags = append(cargs.passThroughFlags, passthroughValue)
+					pconfs.passThroughFlags = append(pconfs.passThroughFlags, passthroughValue)
 				} else {
 					// i + 1 to keep passthrough flag
 					// i + passthroughIndex + 1 to truncate final flag argument
@@ -183,8 +187,8 @@ func (cargs *cmdArgs) parseCmdArgs() {
 						log.Panic(err)
 					}
 
-					cargs.command = context.Command.Name
-					cargs.target = context.Args().Get(0)
+					pconfs.command = context.Command.Name
+					pconfs.target = context.Args().Get(0)
 					return nil
 				},
 			},
@@ -198,48 +202,48 @@ func (cargs *cmdArgs) parseCmdArgs() {
 						Aliases:     []string{"a"},
 						Value:       noAlias,
 						Usage:       fmt.Sprintf("use a particular comprt configuration from %v", comprtConfigsRepoUrl),
-						Destination: &cargs.alias,
+						Destination: &pconfs.alias,
 					},
 					&cli.BoolFlag{
 						Name:        "alias-envvar",
 						Value:       false,
 						Aliases:     []string{"e"},
 						Usage:       "preprocess all the aliases files by evaluating these env vars (ex. <flag> foo=bar <flag> bar=baz)",
-						Destination: &cargs.preprocessAliases,
+						Destination: &pconfs.preprocessAliases,
 					},
 					&cli.BoolFlag{
 						Name:        "passthrough",
 						Value:       false,
 						Usage:       "pass the rest of the flag/flag arguments to debootstrap (e.g. use --foo=bar flag format)",
-						Destination: &cargs.passthrough,
+						Destination: &pconfs.passthrough,
 					},
 					&cli.BoolFlag{
 						Name:        "quiet",
 						Aliases:     []string{"q"},
 						Value:       false,
 						Usage:       "quiet (no output)",
-						Destination: &cargs.quiet,
+						Destination: &pconfs.quiet,
 					},
 					&cli.PathFlag{
 						Name:        "includes-path",
 						Aliases:     []string{"i"},
-						Value:       cargs.comprtIncludesPath,
+						Value:       pconfs.comprtIncludesPath,
 						Usage:       "alternative `PATH` to comprt includes file",
-						Destination: &cargs.comprtIncludesPath,
+						Destination: &pconfs.comprtIncludesPath,
 					},
 					&cli.PathFlag{
 						Name:        "config-path",
 						Aliases:     []string{"c"},
-						Value:       cargs.comprtConfigPath,
+						Value:       pconfs.comprtConfigPath,
 						Usage:       "alternative `PATH` to comptr config file",
-						Destination: &cargs.comprtConfigPath,
+						Destination: &pconfs.comprtConfigPath,
 					},
 					&cli.StringFlag{
 						Name:        "crypt-password",
 						Aliases:     []string{"p"},
 						Value:       "",
 						Usage:       fmt.Sprintf("set a password for the default comprt user: %v", defaultComprtUserName),
-						Destination: &cargs.cryptPassword,
+						Destination: &pconfs.cryptPassword,
 					},
 				},
 				Action: func(context *cli.Context) error {
@@ -259,14 +263,14 @@ func (cargs *cmdArgs) parseCmdArgs() {
 						if _, ok := defaultMirrorMappings[context.Args().Get(0)]; !ok {
 							log.Panic(errors.New("no default MIRROR could be determined"))
 						}
-						cargs.mirror = defaultMirrorMappings[context.Args().Get(0)]
+						pconfs.mirror = defaultMirrorMappings[context.Args().Get(0)]
 					} else {
-						cargs.mirror = context.Args().Get(2)
+						pconfs.mirror = context.Args().Get(2)
 					}
 
-					cargs.command = context.Command.Name
-					cargs.codeName = context.Args().Get(0)
-					cargs.target = context.Args().Get(1)
+					pconfs.command = context.Command.Name
+					pconfs.codeName = context.Args().Get(0)
+					pconfs.target = context.Args().Get(1)
 					return nil
 				},
 			},
@@ -286,7 +290,7 @@ func (cargs *cmdArgs) parseCmdArgs() {
 	app.Run(localOsArgs)
 	// Because for some reason github.com/urfave/cli/v2@v2.3.0 does not have a way to
 	// eject if a variant of 'help' is passed in!
-	if cargs.helpFlagPassedIn {
+	if pconfs.helpFlagPassedIn {
 		os.Exit(0)
 	}
 }
@@ -337,6 +341,16 @@ func stringInArr(strArg string, arr *[]string) bool {
 	return false
 }
 
+// Looks to see if the strings are in the string array.
+func stringsInArr(strArgs []string, arr *[]string) bool {
+	for _, value := range strArgs {
+		if stringInArr(value, arr) {
+			return true
+		}
+	}
+	return false
+}
+
 // Look in a file that has some form of standardized file format
 // (e.g. /etc/passwd, /etc/os-release) and locate a 'field' among
 // the rows based on a regex for another field. Fields are a sequence
@@ -358,17 +372,12 @@ func locateField(fPath, fieldSep string, matchIndex, returnIndex int, matchRegex
 	return "", nil
 }
 
-// DISCUSS(cavcrosby): cmdArgs does more than just store arguments passed in to
-// the command at the command line. Thus, there should be a more generic way to
-// name the structure. At least, if it continues to serve another purpose besides
-// saving command line flag/flags arguments/positional arguments.
-
 // Get required extra data to be used by the program.
-func getProgData(cargs *cmdArgs) error {
+func getProgData(pconfs *progConfigs) error {
 	progDataDir := appdirs.SiteDataDir(progname, "", "")
 	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
 
-	if cargs.alias != noAlias {
+	if pconfs.alias != noAlias {
 		_, err := os.Stat(progDataDir)
 		if errors.Is(err, fs.ErrNotExist) {
 			os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
@@ -397,30 +406,30 @@ func getProgData(cargs *cmdArgs) error {
 			gitWorkingDir.Pull(&pullOpts)
 		}
 
-		if cargs.preprocessAliases {
+		if pconfs.preprocessAliases {
 			makePath, err := exec.LookPath("make")
 			if err != nil {
 				log.Panic(err)
 			}
 
-			makeCmd := exec.Command(makePath, "PREPROCESS_ALIASES=1", cargs.alias)
+			makeCmd := exec.Command(makePath, "PREPROCESS_ALIASES=1", pconfs.alias)
 			makeCmd.Dir = comprtConfigsRepoPath
 			if _, err := makeCmd.Output(); err != nil {
 				log.Panic(err)
 			}
 		}
-		cargs.comprtConfigPath = filepath.Join(comprtConfigsRepoPath, cargs.alias, comprtConfigFile)
-		cargs.comprtIncludesPath = filepath.Join(comprtConfigsRepoPath, cargs.alias, cargs.comprtIncludesPath)
+		pconfs.comprtConfigPath = filepath.Join(comprtConfigsRepoPath, pconfs.alias, comprtConfigFile)
+		pconfs.comprtIncludesPath = filepath.Join(comprtConfigsRepoPath, pconfs.alias, pconfs.comprtIncludesPath)
 	}
 	return nil
 }
 
 // Read in the comprt includes file and adds the discovered packages into
 // includePkgs.
-func getComprtIncludes(includePkgs *[]string, cargs *cmdArgs) error {
+func getComprtIncludes(includePkgs *[]string, pconfs *progConfigs) error {
 	// inspired by:
 	// https://stackoverflow.com/questions/8757389/reading-a-file-line-by-line-in-go/16615559#16615559
-	file, err := os.Open(cargs.comprtIncludesPath)
+	file, err := os.Open(pconfs.comprtIncludesPath)
 	if err != nil {
 		// the comprt includes is optional
 		return nil
@@ -660,8 +669,8 @@ func runInteractiveChroot(target string) (errs []error) {
 // determine most of what to expect out of a function.
 
 // Create a debian comprt.
-func createComprt(cargs *cmdArgs) (errs []error) {
-	if err := getProgData(cargs); err != nil {
+func createComprt(pconfs *progConfigs) (errs []error) {
+	if err := getProgData(pconfs); err != nil {
 		errs = append(errs, err)
 		return
 	}
@@ -675,20 +684,20 @@ func createComprt(cargs *cmdArgs) (errs []error) {
 	var includePkgs, debootstrapCmdArr []string
 	debootstrapCmdArr = append([]string{debootstrapPath}, debootstrapCmdArr...)
 
-	if err := getComprtIncludes(&includePkgs, cargs); err != nil {
+	if err := getComprtIncludes(&includePkgs, pconfs); err != nil {
 		errs = append(errs, err)
 		return
 	}
 	if includePkgs != nil {
 		debootstrapCmdArr = append(debootstrapCmdArr, "--include="+strings.Join(includePkgs, ","))
 	}
-	if cargs.passThroughFlags != nil {
-		debootstrapCmdArr = append(debootstrapCmdArr, cargs.passThroughFlags...)
+	if pconfs.passThroughFlags != nil {
+		debootstrapCmdArr = append(debootstrapCmdArr, pconfs.passThroughFlags...)
 	}
 	// positional arguments
-	debootstrapCmdArr = append(debootstrapCmdArr, cargs.codeName, cargs.target, cargs.mirror)
+	debootstrapCmdArr = append(debootstrapCmdArr, pconfs.codeName, pconfs.target, pconfs.mirror)
 
-	if err := copy(cargs.comprtConfigPath, filepath.Join(cargs.target, comprtConfigFile)); err != nil {
+	if err := copy(pconfs.comprtConfigPath, filepath.Join(pconfs.target, comprtConfigFile)); err != nil {
 		errs = append(errs, err)
 		return
 	}
@@ -696,7 +705,7 @@ func createComprt(cargs *cmdArgs) (errs []error) {
 	// inspired by:
 	// https://stackoverflow.com/questions/39173430/how-to-print-the-realtime-output-of-running-child-process-in-go
 	debootstrapCmd := exec.Command(debootstrapPath, debootstrapCmdArr[1:]...)
-	if !cargs.quiet {
+	if !pconfs.quiet {
 		debootstrapCmd.Stdout = os.Stdout
 		debootstrapCmd.Stderr = os.Stderr
 	}
@@ -709,7 +718,7 @@ func createComprt(cargs *cmdArgs) (errs []error) {
 		return
 	}
 
-	exitChroot, errs := Chroot(cargs.target)
+	exitChroot, errs := Chroot(pconfs.target)
 	if errs != nil {
 		errs = append(errs, errs...)
 		return
@@ -726,7 +735,7 @@ func createComprt(cargs *cmdArgs) (errs []error) {
 		return
 	}
 	comprtConfigFileCmd := exec.Command(shPath, filepath.Join("/", comprtConfigFile))
-	if !cargs.quiet {
+	if !pconfs.quiet {
 		comprtConfigFileCmd.Stdout = os.Stdout
 		comprtConfigFileCmd.Stderr = os.Stderr
 	}
@@ -739,7 +748,7 @@ func createComprt(cargs *cmdArgs) (errs []error) {
 		return
 	}
 
-	if cargs.alias == noAlias {
+	if pconfs.alias == noAlias {
 		groupAddPath, err := exec.LookPath("groupadd")
 		if err != nil {
 			errs = append(errs, err)
@@ -752,7 +761,7 @@ func createComprt(cargs *cmdArgs) (errs []error) {
 			strconv.Itoa(defaultComprtUid),
 			defaultComprtUserName,
 		)
-		if !cargs.quiet {
+		if !pconfs.quiet {
 			groupAddCmd.Stdout = os.Stdout
 			groupAddCmd.Stderr = os.Stderr
 		}
@@ -784,9 +793,9 @@ func createComprt(cargs *cmdArgs) (errs []error) {
 			"/bin/bash",
 			defaultComprtUserName,
 			"--password",
-			cargs.cryptPassword,
+			pconfs.cryptPassword,
 		)
-		if !cargs.quiet {
+		if !pconfs.quiet {
 			userAddCmd.Stdout = os.Stdout
 			userAddCmd.Stderr = os.Stderr
 		}
@@ -805,19 +814,19 @@ func createComprt(cargs *cmdArgs) (errs []error) {
 
 // Start the main program execution.
 func main() {
-	cargs := &cmdArgs{ // sets defaults
+	pconfs := &progConfigs{ // sets defaults
 		comprtConfigPath:   filepath.Join(".", comprtConfigFile),
 		comprtIncludesPath: filepath.Join(".", comprtIncludeFile),
 	}
-	cargs.parseCmdArgs()
+	pconfs.parseCmdArgs()
 
-	switch cargs.command {
+	switch pconfs.command {
 	case "chroot":
-		if errs := runInteractiveChroot(cargs.target); errs != nil {
+		if errs := runInteractiveChroot(pconfs.target); errs != nil {
 			log.Panic(errs)
 		}
 	case "create":
-		if errs := createComprt(cargs); errs != nil {
+		if errs := createComprt(pconfs); errs != nil {
 			log.Panic(errs)
 		}
 	}

@@ -161,11 +161,11 @@ func TestGetProgData(t *testing.T) {
 	progDataDir := appdirs.SiteDataDir(progname, "", "")
 	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
 
-	cargs := &cmdArgs{
+	pconfs := &progConfigs{
 		alias: "altaria",
 	}
 
-	if err := getProgData(cargs); err != nil {
+	if err := getProgData(pconfs); err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(progDataDir)
@@ -185,18 +185,18 @@ func TestGetComprtIncludes(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDirPath)
 
-	cargs := &cmdArgs{
+	pconfs := &progConfigs{
 		comprtConfigPath:   filepath.Join(tempDirPath, comprtConfigFile),
 		comprtIncludesPath: filepath.Join(tempDirPath, comprtIncludeFile),
 	}
 
-	if err := createTestFile(cargs.comprtIncludesPath, strings.Join(testPkgs, "\n")); err != nil {
+	if err := createTestFile(pconfs.comprtIncludesPath, strings.Join(testPkgs, "\n")); err != nil {
 		t.Fatal(err)
 	}
 
 	var includePkgs []string
 	pkgsByteString := []byte(strings.Join(testPkgs, "\n"))
-	getComprtIncludes(&includePkgs, cargs)
+	getComprtIncludes(&includePkgs, pconfs)
 	
 	if !bytes.Equal([]byte(strings.Join(includePkgs, "\n")), pkgsByteString) {
 		t.Fatalf("found the following packages \n%s", strings.Join(includePkgs, "\n"))
@@ -345,7 +345,7 @@ func TestChrootCommandIntegration(t *testing.T) {
 	defer os.RemoveAll(tempDirPath)
 
 	var testTarget string = filepath.Join(tempDirPath, "testChroot")
-	cargs := &cmdArgs{
+	pconfs := &progConfigs{
 		alias:            noAlias,
 		codeName:         testCodeCame,
 		comprtConfigPath: filepath.Join(tempDirPath, comprtConfigFile),
@@ -360,11 +360,11 @@ func TestChrootCommandIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := createTestFile(cargs.comprtConfigPath, testComprtConfigFileContents); err != nil {
+	if err := createTestFile(pconfs.comprtConfigPath, testComprtConfigFileContents); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := createComprt(cargs); err != nil {
+	if err := createComprt(pconfs); err != nil {
 		t.Fatal(err)
 	}
 
