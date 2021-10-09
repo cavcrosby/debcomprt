@@ -373,11 +373,11 @@ func locateField(fPath, fieldSep string, matchIndex, returnIndex int, matchRegex
 }
 
 // Get required extra data to be used by the program.
-func getProgData(pconfs *progConfigs) error {
+func getProgData(alias string, preprocessAliases bool, pconfs *progConfigs) error {
 	progDataDir := appdirs.SiteDataDir(progname, "", "")
 	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
 
-	if pconfs.alias != noAlias {
+	if alias != noAlias {
 		_, err := os.Stat(progDataDir)
 		if errors.Is(err, fs.ErrNotExist) {
 			os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
@@ -406,30 +406,30 @@ func getProgData(pconfs *progConfigs) error {
 			gitWorkingDir.Pull(&pullOpts)
 		}
 
-		if pconfs.preprocessAliases {
+		if preprocessAliases {
 			makePath, err := exec.LookPath("make")
 			if err != nil {
 				log.Panic(err)
 			}
 
-			makeCmd := exec.Command(makePath, "PREPROCESS_ALIASES=1", pconfs.alias)
+			makeCmd := exec.Command(makePath, "PREPROCESS_ALIASES=1", alias)
 			makeCmd.Dir = comprtConfigsRepoPath
 			if _, err := makeCmd.Output(); err != nil {
 				log.Panic(err)
 			}
 		}
-		pconfs.comprtConfigPath = filepath.Join(comprtConfigsRepoPath, pconfs.alias, comprtConfigFile)
-		pconfs.comprtIncludesPath = filepath.Join(comprtConfigsRepoPath, pconfs.alias, pconfs.comprtIncludesPath)
+		pconfs.comprtConfigPath = filepath.Join(comprtConfigsRepoPath, alias, comprtConfigFile)
+		pconfs.comprtIncludesPath = filepath.Join(comprtConfigsRepoPath, alias, comprtIncludeFile)
 	}
 	return nil
 }
 
 // Read in the comprt includes file and adds the discovered packages into
 // includePkgs.
-func getComprtIncludes(includePkgs *[]string, pconfs *progConfigs) error {
+func getComprtIncludes(includePkgs *[]string, comprtIncludesPath string) error {
 	// inspired by:
 	// https://stackoverflow.com/questions/8757389/reading-a-file-line-by-line-in-go/16615559#16615559
-	file, err := os.Open(pconfs.comprtIncludesPath)
+	file, err := os.Open(comprtIncludesPath)
 	if err != nil {
 		// the comprt includes is optional
 		return nil
@@ -609,6 +609,23 @@ func Chroot(target string) (f func() error, errs []error) {
 	}, nil
 }
 
+// Create the debootstrap arg list to be used elsewhere.
+func createDebootstrapArgList(args *[]string, passThroughFlags *[]string, comprtIncludesPath, codeName, target, mirror string) error {
+	var includePkgs []string
+	if err := getComprtIncludes(&includePkgs, comprtIncludesPath); err != nil {
+		return err
+	}
+	if includePkgs != nil {
+		*args = append(*args, "--include="+strings.Join(includePkgs, ","))
+	}
+	if passThroughFlags != nil {
+		*args = append(*args, *passThroughFlags...)
+	}
+	*args = append(*args, codeName, target, mirror)
+
+	return nil
+}
+
 // Provide an interactive shell into the comprt.
 func runInteractiveChroot(target string) (errs []error) {
 	var uidRegex *regexp.Regexp = regexp.MustCompile(strconv.Itoa(defaultComprtUid))
@@ -663,49 +680,23 @@ func runInteractiveChroot(target string) (errs []error) {
 	return nil
 }
 
-// DISCUSS(cavcrosby): it's rather hard to determine what arguments this function
-// needs to work (aside a data structure containing many configurations). I would
-// think at most, the name of the function and its signature would be enough to
-// determine most of what to expect out of a function.
-
 // Create a debian comprt.
-func createComprt(pconfs *progConfigs) (errs []error) {
-	if err := getProgData(pconfs); err != nil {
-		errs = append(errs, err)
-		return
-	}
-
+func createComprt(comprtConfigPath, target, alias, cryptPassword string, quiet bool, debootstrapCmdArr *[]string) (errs []error) {
 	debootstrapPath, err := exec.LookPath("debootstrap")
 	if err != nil {
 		errs = append(errs, err)
 		return
 	}
 
-	var includePkgs, debootstrapCmdArr []string
-	debootstrapCmdArr = append([]string{debootstrapPath}, debootstrapCmdArr...)
-
-	if err := getComprtIncludes(&includePkgs, pconfs); err != nil {
-		errs = append(errs, err)
-		return
-	}
-	if includePkgs != nil {
-		debootstrapCmdArr = append(debootstrapCmdArr, "--include="+strings.Join(includePkgs, ","))
-	}
-	if pconfs.passThroughFlags != nil {
-		debootstrapCmdArr = append(debootstrapCmdArr, pconfs.passThroughFlags...)
-	}
-	// positional arguments
-	debootstrapCmdArr = append(debootstrapCmdArr, pconfs.codeName, pconfs.target, pconfs.mirror)
-
-	if err := copy(pconfs.comprtConfigPath, filepath.Join(pconfs.target, comprtConfigFile)); err != nil {
+	if err := copy(comprtConfigPath, filepath.Join(target, comprtConfigFile)); err != nil {
 		errs = append(errs, err)
 		return
 	}
 
 	// inspired by:
 	// https://stackoverflow.com/questions/39173430/how-to-print-the-realtime-output-of-running-child-process-in-go
-	debootstrapCmd := exec.Command(debootstrapPath, debootstrapCmdArr[1:]...)
-	if !pconfs.quiet {
+	debootstrapCmd := exec.Command(debootstrapPath, *debootstrapCmdArr...)
+	if !quiet {
 		debootstrapCmd.Stdout = os.Stdout
 		debootstrapCmd.Stderr = os.Stderr
 	}
@@ -718,7 +709,7 @@ func createComprt(pconfs *progConfigs) (errs []error) {
 		return
 	}
 
-	exitChroot, errs := Chroot(pconfs.target)
+	exitChroot, errs := Chroot(target)
 	if errs != nil {
 		errs = append(errs, errs...)
 		return
@@ -735,7 +726,7 @@ func createComprt(pconfs *progConfigs) (errs []error) {
 		return
 	}
 	comprtConfigFileCmd := exec.Command(shPath, filepath.Join("/", comprtConfigFile))
-	if !pconfs.quiet {
+	if !quiet {
 		comprtConfigFileCmd.Stdout = os.Stdout
 		comprtConfigFileCmd.Stderr = os.Stderr
 	}
@@ -748,7 +739,7 @@ func createComprt(pconfs *progConfigs) (errs []error) {
 		return
 	}
 
-	if pconfs.alias == noAlias {
+	if alias == noAlias {
 		groupAddPath, err := exec.LookPath("groupadd")
 		if err != nil {
 			errs = append(errs, err)
@@ -761,7 +752,7 @@ func createComprt(pconfs *progConfigs) (errs []error) {
 			strconv.Itoa(defaultComprtUid),
 			defaultComprtUserName,
 		)
-		if !pconfs.quiet {
+		if !quiet {
 			groupAddCmd.Stdout = os.Stdout
 			groupAddCmd.Stderr = os.Stderr
 		}
@@ -793,9 +784,9 @@ func createComprt(pconfs *progConfigs) (errs []error) {
 			"/bin/bash",
 			defaultComprtUserName,
 			"--password",
-			pconfs.cryptPassword,
+			cryptPassword,
 		)
-		if !pconfs.quiet {
+		if !quiet {
 			userAddCmd.Stdout = os.Stdout
 			userAddCmd.Stderr = os.Stderr
 		}
@@ -826,7 +817,27 @@ func main() {
 			log.Panic(errs)
 		}
 	case "create":
-		if errs := createComprt(pconfs); errs != nil {
+		if err := getProgData(pconfs.alias, pconfs.preprocessAliases, pconfs); err != nil {
+			log.Panic(err)
+		}
+
+		var debootstrapCmdArr []string
+		createDebootstrapArgList(
+			&debootstrapCmdArr,
+			&pconfs.passThroughFlags,
+			pconfs.comprtIncludesPath,
+			pconfs.codeName,
+			pconfs.target,
+			pconfs.mirror,
+		)
+		if errs := createComprt(
+			pconfs.comprtConfigPath,
+			pconfs.target,
+			pconfs.alias,
+			pconfs.cryptPassword,
+			pconfs.quiet,
+			&debootstrapCmdArr,
+		); errs != nil {
 			log.Panic(errs)
 		}
 	}

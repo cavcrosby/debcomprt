@@ -39,8 +39,8 @@ const (
 )
 
 var (
-	testPkgs = []string{"autoconf", "git", "wget"}
-	testCodeCame = "buster"
+	testPkgs                       = []string{"autoconf", "git", "wget"}
+	testCodeCame                   = "buster"
 	testComprtConfigFileChrootPath = filepath.Join("foo")
 )
 
@@ -165,7 +165,7 @@ func TestGetProgData(t *testing.T) {
 		alias: "altaria",
 	}
 
-	if err := getProgData(pconfs); err != nil {
+	if err := getProgData(pconfs.alias, false, pconfs); err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(progDataDir)
@@ -196,8 +196,8 @@ func TestGetComprtIncludes(t *testing.T) {
 
 	var includePkgs []string
 	pkgsByteString := []byte(strings.Join(testPkgs, "\n"))
-	getComprtIncludes(&includePkgs, pconfs)
-	
+	getComprtIncludes(&includePkgs, pconfs.comprtIncludesPath)
+
 	if !bytes.Equal([]byte(strings.Join(includePkgs, "\n")), pkgsByteString) {
 		t.Fatalf("found the following packages \n%s", strings.Join(includePkgs, "\n"))
 	}
@@ -346,15 +346,12 @@ func TestChrootCommandIntegration(t *testing.T) {
 
 	var testTarget string = filepath.Join(tempDirPath, "testChroot")
 	pconfs := &progConfigs{
-		alias:            noAlias,
-		codeName:         testCodeCame,
 		comprtConfigPath: filepath.Join(tempDirPath, comprtConfigFile),
-		mirror:           defaultMirrorMappings[testCodeCame],
 		target:           testTarget,
 	}
 
 	if err := os.Mkdir(
-		testTarget,
+		pconfs.target,
 		os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
 	); err != nil {
 		t.Fatal(err)
@@ -364,8 +361,17 @@ func TestChrootCommandIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := createComprt(pconfs); err != nil {
-		t.Fatal(err)
+	var debootstrapCmdArr []string
+	createDebootstrapArgList(
+		&debootstrapCmdArr,
+		nil,
+		"",
+		testCodeCame,
+		pconfs.target,
+		defaultMirrorMappings[testCodeCame],
+	)
+	if errs := createComprt(pconfs.comprtConfigPath, pconfs.target, noAlias, "", false, &debootstrapCmdArr); errs != nil {
+		t.Fatal(errs)
 	}
 
 	debcomprtCmd := exec.Command("debcomprt", "chroot", testTarget)
