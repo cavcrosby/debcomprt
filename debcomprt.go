@@ -124,7 +124,6 @@ type progConfigs struct {
 func (pconfs *progConfigs) parseCmdArgs() {
 	var localOsArgs []string = os.Args
 
-	// parses out flags to pass to debootstrap
 	for i, val := range localOsArgs {
 		if i < 1 {
 			continue
@@ -155,11 +154,12 @@ func (pconfs *progConfigs) parseCmdArgs() {
 			var envVar string = localOsArgs[i+1]
 
 			if reFindEnvVar.FindStringIndex(envVar) == nil {
-				log.Panic(errors.New("an env var was not properly formatted"))
+				log.Panic(fmt.Errorf("%v is not a properly formatted env var", envVar))
 			}
 			envVarArr := reFindEnvVar.FindStringSubmatch(envVar)
 			envVarName, envVarValue := envVarArr[1], envVarArr[2]
 			os.Setenv(envVarName, envVarValue)
+
 			// i + 1 to keep alias-envvar flag
 			// i + 2 only to truncate the flag's argument
 			localOsArgs = append(localOsArgs[:i+1], localOsArgs[i+2:]...)
@@ -316,11 +316,11 @@ func copy(src, dest string) error {
 	}
 	defer destFd.Close()
 
-	_, err = io.Copy(destFd, srcFd)
-	if err != nil {
+	if _, err := io.Copy(destFd, srcFd); err != nil {
 		return err
 	}
-	return destFd.Close()
+	
+	return nil
 }
 
 // Reverse the string array. Inspired by:
@@ -338,16 +338,18 @@ func stringInArr(strArg string, arr *[]string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
-// Looks to see if the strings are in the string array.
+// Looks to see if a string from the strArgs is in the string array.
 func stringsInArr(strArgs []string, arr *[]string) bool {
 	for _, value := range strArgs {
 		if stringInArr(value, arr) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -369,6 +371,7 @@ func locateField(fPath, fieldSep string, matchIndex, returnIndex int, matchRegex
 			return fields[returnIndex], nil
 		}
 	}
+
 	return "", nil
 }
 
@@ -378,18 +381,16 @@ func getProgData(alias string, preprocessAliases bool, pconfs *progConfigs) erro
 	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
 
 	if alias != noAlias {
-		_, err := os.Stat(progDataDir)
-		if errors.Is(err, fs.ErrNotExist) {
+		if _, err := os.Stat(progDataDir); errors.Is(err, fs.ErrNotExist) {
 			os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
 		} else if err != nil {
 			return err
 		}
 
 		if _, err := os.Stat(comprtConfigsRepoPath); errors.Is(err, fs.ErrNotExist) {
-			_, err := git.PlainClone(comprtConfigsRepoPath, false, &git.CloneOptions{
+			if _, err := git.PlainClone(comprtConfigsRepoPath, false, &git.CloneOptions{
 				URL: comprtConfigsRepoUrl,
-			})
-			if err != nil {
+			}); err != nil {
 				return err
 			}
 		} else {
@@ -418,9 +419,11 @@ func getProgData(alias string, preprocessAliases bool, pconfs *progConfigs) erro
 				log.Panic(err)
 			}
 		}
+		
 		pconfs.comprtConfigPath = filepath.Join(comprtConfigsRepoPath, alias, comprtConfigFile)
 		pconfs.comprtIncludesPath = filepath.Join(comprtConfigsRepoPath, alias, comprtIncludeFile)
 	}
+
 	return nil
 }
 
@@ -444,6 +447,7 @@ func getComprtIncludes(includePkgs *[]string, comprtIncludesPath string) error {
 	if err := scanner.Err(); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -465,6 +469,8 @@ func mountChrootFileSystems(devicesToBind []string, target string) ([]string, er
 			case "/dev":
 				fileMode = os.ModeDir | (OS_USER_R | OS_USER_W | OS_USER_X | OS_GROUP_R | OS_GROUP_X | OS_OTH_R | OS_OTH_X)
 			case "/dev/pts":
+				fileMode = os.ModeDir | (OS_USER_R | OS_USER_W | OS_USER_X | OS_GROUP_R | OS_GROUP_X | OS_OTH_R | OS_OTH_X)
+			default:
 				fileMode = os.ModeDir | (OS_USER_R | OS_USER_W | OS_USER_X | OS_GROUP_R | OS_GROUP_X | OS_OTH_R | OS_OTH_X)
 			}
 			if err := os.Mkdir(
@@ -546,6 +552,7 @@ func unMountChrootFileSystems(devicesToBind []string, target string) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -615,6 +622,7 @@ func createDebootstrapArgList(args *[]string, passThroughFlags *[]string, comprt
 	if err := getComprtIncludes(&includePkgs, comprtIncludesPath); err != nil {
 		return err
 	}
+
 	if includePkgs != nil {
 		*args = append(*args, "--include="+strings.Join(includePkgs, ","))
 	}
@@ -677,6 +685,7 @@ func runInteractiveChroot(target string) (errs []error) {
 		errs = append(errs, err)
 		return
 	}
+
 	return nil
 }
 
@@ -725,6 +734,7 @@ func createComprt(comprtConfigPath, target, alias, cryptPassword string, quiet b
 		errs = append(errs, err)
 		return
 	}
+
 	comprtConfigFileCmd := exec.Command(shPath, filepath.Join("/", comprtConfigFile))
 	if !quiet {
 		comprtConfigFileCmd.Stdout = os.Stdout

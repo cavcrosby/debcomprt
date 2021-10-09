@@ -81,6 +81,7 @@ func stat(fPath string, stat *syscall.Stat_t) error {
 	// fileStat should not contain further pointers, though this may change depending
 	// on the implementation. For reference: https://pkg.go.dev/syscall#Stat_t
 	*stat = *fileStat
+	
 	return nil
 }
 
