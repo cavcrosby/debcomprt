@@ -319,7 +319,7 @@ func copy(src, dest string) error {
 	if _, err := io.Copy(destFd, srcFd); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -356,18 +356,22 @@ func stringsInArr(strArgs []string, arr *[]string) bool {
 // Look in a file that has some form of standardized file format
 // (e.g. /etc/passwd, /etc/os-release) and locate a 'field' among
 // the rows based on a regex for another field. Fields are a sequence
-// of elements separated by a field separator (or a character).
-func locateField(fPath, fieldSep string, matchIndex, returnIndex int, matchRegex *regexp.Regexp) (string, error) {
+// of characters separated by a field separator (or a character). Field
+// indexes start at 0.
+func locateField(fPath string, fieldSepRegex *regexp.Regexp, matchIndex, returnIndex int, matchRegex *regexp.Regexp) (string, error) {
 	file, err := os.Open(fPath)
 	if err != nil {
 		return "", err
 	}
 	defer file.Close()
 
+	var allFields int = -1
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		fields := strings.Split(scanner.Text(), fieldSep)
-		if matchRegex.FindStringIndex(fields[matchIndex]) != nil {
+		fields := fieldSepRegex.Split(scanner.Text(), allFields)
+		if len(fields) <= matchIndex {
+			continue
+		} else if matchRegex.FindStringIndex(fields[matchIndex]) != nil {
 			return fields[returnIndex], nil
 		}
 	}
@@ -419,7 +423,7 @@ func getProgData(alias string, preprocessAliases bool, pconfs *progConfigs) erro
 				log.Panic(err)
 			}
 		}
-		
+
 		pconfs.comprtConfigPath = filepath.Join(comprtConfigsRepoPath, alias, comprtConfigFile)
 		pconfs.comprtIncludesPath = filepath.Join(comprtConfigsRepoPath, alias, comprtIncludeFile)
 	}
@@ -453,9 +457,9 @@ func getComprtIncludes(includePkgs *[]string, comprtIncludesPath string) error {
 
 // Mount filesystems found on devices to their respective location(s) on the
 // target. As if the process had chooted to the target.
-func mountChrootFileSystems(devicesToBind []string, target string) ([]string, error) {
+func mountChrootFileSystems(devicesToMount []string, target string) ([]string, error) {
 	var fileSystemsMounted []string
-	for _, filesys := range devicesToBind {
+	for _, filesys := range devicesToMount {
 		mountPoint := filepath.Join(target, filesys)
 		if _, err := os.Stat(mountPoint); errors.Is(err, fs.ErrNotExist) {
 			var fileMode fs.FileMode
@@ -489,7 +493,7 @@ func mountChrootFileSystems(devicesToBind []string, target string) ([]string, er
 }
 
 // Unmount filesystems found on devices starting in the tree hierarchy of the target.
-func unMountChrootFileSystems(devicesToBind []string, target string) error {
+func unMountChrootFileSystems(devicesToMount []string, target string) error {
 	// Unfortunately unmounting filesystems is not as simple when working in code.
 	// It seems retrying to unmount the same filesystem previously attempted works
 	// after a short sleep. Ordering of the filesystems matter, for reference:
@@ -498,9 +502,9 @@ func unMountChrootFileSystems(devicesToBind []string, target string) error {
 	// MONITOR(cavcrosby): the syscall package is deprecated. At the time of writing, the replacement
 	// package for Unix systems is still not at a stable version. So this will need to
 	// be revisited at some point. Also for reference: golang.org/x/sys
-	reverse(&devicesToBind)
+	reverse(&devicesToMount)
 	var fileSystemsUnmountBacklog []string = []string{}
-	for _, filesys := range devicesToBind {
+	for _, filesys := range devicesToMount {
 		var retries int
 		for {
 			// DISCUSS(cavcrosby): would using golang's logging package be beneficial? Its
@@ -572,8 +576,8 @@ func Chroot(target string) (f func() error, errs []error) {
 		return nil, append(errs, err)
 	}
 
-	var devicesToBind []string = []string{"/sys", "/proc", "/dev", "/dev/pts"}
-	fileSystemsMounted, err := mountChrootFileSystems(devicesToBind, target)
+	var devicesToMount []string = []string{"/sys", "/proc", "/dev", "/dev/pts"}
+	fileSystemsMounted, err := mountChrootFileSystems(devicesToMount, target)
 	defer func() {
 		if errs != nil {
 			root.Close()
@@ -607,7 +611,7 @@ func Chroot(target string) (f func() error, errs []error) {
 			return err
 		}
 
-		if err := unMountChrootFileSystems(devicesToBind, target); err != nil {
+		if err := unMountChrootFileSystems(devicesToMount, target); err != nil {
 			root.Close()
 			return err
 		}
@@ -640,7 +644,7 @@ func runInteractiveChroot(target string) (errs []error) {
 	var loginNameIndex, uidIndex int = 0, 2
 	defaultComprtUsername, err := locateField(
 		filepath.Join(target, "/etc/passwd"),
-		":",
+		regexp.MustCompile(":"),
 		uidIndex,
 		loginNameIndex,
 		uidRegex,

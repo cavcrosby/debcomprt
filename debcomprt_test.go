@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -81,7 +82,7 @@ func stat(fPath string, stat *syscall.Stat_t) error {
 	// fileStat should not contain further pointers, though this may change depending
 	// on the implementation. For reference: https://pkg.go.dev/syscall#Stat_t
 	*stat = *fileStat
-	
+
 	return nil
 }
 
@@ -204,6 +205,86 @@ func TestGetComprtIncludes(t *testing.T) {
 	}
 }
 
+func TestLocateField(t *testing.T) {
+	var mountPointIndex int = 1
+	mountPoint, err := locateField(
+		"/etc/fstab",
+		regexp.MustCompile(`\s+`),
+		mountPointIndex,
+		mountPointIndex,
+		regexp.MustCompile(`^\/$`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if mountPoint != `/` {
+		t.Fatal("was unable to locate '/' mount point!")
+	}
+}
+
+func TestMountAndUnMountChrootFileSystems(t *testing.T) {
+	progDataDir, err := setupProgDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tempDirPath, err := os.MkdirTemp(progDataDir, "_"+tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDirPath)
+
+	var testTarget string = filepath.Join(tempDirPath, "testChroot")
+	if err := os.Mkdir(
+		testTarget,
+		os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	var rootStat *syscall.Stat_t = &syscall.Stat_t{}
+	if err := stat("/", rootStat); err != nil {
+		t.Fatal(err)
+	}
+
+	var deviceToMount string = "/proc"
+	var deviceStat *syscall.Stat_t = &syscall.Stat_t{}
+	if err := stat(deviceToMount, deviceStat); err != nil {
+		t.Fatal(err)
+	}
+
+	var testDirStat *syscall.Stat_t = &syscall.Stat_t{}
+	if _, err := mountChrootFileSystems([]string{deviceToMount}, testTarget); err != nil {
+		t.Fatal(err)
+	}
+	// Assume at this point the strong possibility that something was mounted to the
+	// test directory.
+	defer func() {
+		testDirStat = &syscall.Stat_t{}
+		if err := unMountChrootFileSystems([]string{deviceToMount}, testTarget); err != nil {
+			t.Fatal(err)
+		}
+		if err := stat(filepath.Join(testTarget, deviceToMount), testDirStat); err != nil {
+			t.Fatal(err)
+		}
+
+		// DISCUSS(cavcrosby): this test is banking on the notion that the root filesystem has a different
+		// device number than the device being mounted to the test directory. This seems
+		// straight forward and more than likely will be sufficient for my needs. That
+		// said, I'd like to compare this implementation to something like 'mountpoint.c'.
+		if rootStat.Dev != testDirStat.Dev {
+			t.Fatalf("%v was still mounted in test directory after unmounting", deviceToMount)
+		}
+	}()
+
+	if err := stat(filepath.Join(testTarget, deviceToMount), testDirStat); err != nil {
+		t.Fatal(err)
+	} else if deviceStat.Dev != testDirStat.Dev {
+		t.Fatalf("%v was not mounted in test directory", deviceToMount)
+	}
+}
+
 func TestChroot(t *testing.T) {
 	tempDirPath, err := os.MkdirTemp("", "_"+tempDir)
 	if err != nil {
@@ -250,6 +331,55 @@ func TestChroot(t *testing.T) {
 
 	if rootStat.Ino == parentRootStat.Ino {
 		t.Fatal("was unable to chroot into target")
+	}
+}
+
+func TestMountAndUnMountChrootFileSystemsRecoveryIntegration(t *testing.T) {
+	progDataDir, err := setupProgDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tempDirPath, err := os.MkdirTemp(progDataDir, "_"+tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDirPath)
+
+	var testTarget string = filepath.Join(tempDirPath, "testChroot")
+	if err := os.Mkdir(
+		testTarget,
+		os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	var sysDevice string = "/sys"
+	var procDevice string = "/proc"
+	var deviceToFileStats = map[string]*syscall.Stat_t{
+		sysDevice:  {},
+		procDevice: {},
+	}
+	var devicesToMount []string = []string{sysDevice, procDevice, "/foo"}
+	for k, v := range deviceToFileStats {
+		if err := stat(k, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fileSystemsMounted, _ := mountChrootFileSystems(devicesToMount, testTarget)
+	if err := unMountChrootFileSystems(fileSystemsMounted, testTarget); err != nil {
+		t.Fatal(err)
+	}
+
+	var testDirStat *syscall.Stat_t
+	for k, v := range deviceToFileStats {
+		testDirStat = &syscall.Stat_t{}
+		if err := stat(filepath.Join(testTarget, k), testDirStat); err != nil {
+			t.Fatal(err)
+		} else if v.Dev == testDirStat.Dev {
+			t.Fatalf("%v was mounted in test directory", k)
+		}
 	}
 }
 
