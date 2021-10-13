@@ -785,6 +785,9 @@ func createComprt(comprtConfigPath, target, alias, cryptPassword string, quiet b
 			return
 		}
 
+		// DISCUSS(cavcrosby): it might be fun to reimplement the creation of the default
+		// user and group using the more primitive system calls for Unix/Linux. I would
+		// like to circle around at some point and look into this.
 		userAddCmd := exec.Command(
 			userAddPath,
 			"--create-home",
@@ -827,6 +830,27 @@ func main() {
 
 	switch pconfs.command {
 	case "chroot":
+		// DISCUSS(cavcrosby): chrooting allows for the filesystem to be virtualized in that, the running
+		// process will believe it is running in its own private filesystem. I would like
+		// to extend this in the future to the process tree as well. That said, some
+		// investigation has already been done to look into this.
+		//
+		// Virtualizing the process tree will require creating processes inside a new
+		// PID namespace and mounting a new instance of /proc from a process inside the
+		// new PID namespace.
+		//
+		// While the above would not be technically to hard to implement, it does come
+		// with caveats. Looking mainly at the PID namespace man page (link below), any new
+		// process created in this PID namespace will be labeled as the 'init' process
+		// for the new namespace. Thus, some form of 'init' software would probably need
+		// to be run vs just using a shell instance. Otherwise, if the shell instance
+		// exited, then all processes in the PID namespace will be killed by the kernel.
+		// https://man7.org/linux/man-pages/man7/pid_namespaces.7.html,
+		//
+		// To add, systemd processes cannot be controlled in a chroot. Thus, more research
+		// would need to be done if this feat would be desired to attempt. For reference:
+		// https://superuser.com/questions/688733/start-a-systemd-service-inside-chroot-from-a-non-systemd-based-rootfs
+		
 		if errs := runInteractiveChroot(pconfs.target); errs != nil {
 			log.Panic(errs)
 		}
