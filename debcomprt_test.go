@@ -15,15 +15,19 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -35,17 +39,25 @@ const (
 	tempDir = "debcomprt"
 )
 
-var pkgs []string = []string{"autoconf", "git", "wget"}
+var (
+	testPkgs                       = []string{"autoconf", "git", "wget"}
+	testCodeCame                   = "buster"
+	testComprtConfigFileChrootPath = filepath.Join("foo")
+)
+
+var testComprtConfigFileContents = fmt.Sprintf(`#!/bin/sh
+
+touch %s
+	`, testComprtConfigFileChrootPath)
 
 // createTestFile creates a test file that is solely meant for testing. This file
-// should be created on the intentions of allowing any test to access it.
-func createTestFile(filePath, contents string) error {
-	err := ioutil.WriteFile(
-		filePath,
+// is created on the intentions of allowing anything to access it.
+func createTestFile(fPath, contents string) error {
+	if err := ioutil.WriteFile(
+		fPath,
 		[]byte(contents),
 		ModeFile|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
-	)
-	if err != nil {
+	); err != nil {
 		return err
 	}
 
@@ -53,8 +65,8 @@ func createTestFile(filePath, contents string) error {
 }
 
 // Get a file's system status.
-func stat(filePath string, stat *syscall.Stat_t) error {
-	fileInfo, err := os.Stat(filePath)
+func stat(fPath string, stat *syscall.Stat_t) error {
+	fileInfo, err := os.Stat(fPath)
 	if err != nil {
 		return err
 	}
@@ -70,13 +82,26 @@ func stat(filePath string, stat *syscall.Stat_t) error {
 	// fileStat should not contain further pointers, though this may change depending
 	// on the implementation. For reference: https://pkg.go.dev/syscall#Stat_t
 	*stat = *fileStat
+
 	return nil
+}
+
+// Setup the program's data directory. Ensure any validation/checking is done here.
+func setupProgDataDir() (string, error) {
+	progDataDir := appdirs.SiteDataDir(progname, "", "")
+	if _, err := os.Stat(progDataDir); errors.Is(err, fs.ErrNotExist) {
+		os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
+	} else if err != nil {
+		return "", err
+	}
+
+	return progDataDir, nil
 }
 
 func TestCopy(t *testing.T) {
 	// inspired by:
 	// https://stackoverflow.com/questions/29505089/how-can-i-compare-two-files-in-golang#answer-29528747
-	tempDirPath, err := ioutil.TempDir("", tempDir)
+	tempDirPath, err := os.MkdirTemp("", "_"+tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +134,7 @@ func TestCopy(t *testing.T) {
 }
 
 func TestCopyDestAlreadyExists(t *testing.T) {
-	tempDirPath, err := ioutil.TempDir("", tempDir)
+	tempDirPath, err := os.MkdirTemp("", "_"+tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,13 +152,10 @@ func TestCopyDestAlreadyExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	errors.Is(err, syscall.EBUSY)
-	copyErr := copy(filePath1, filePath2)
-	if copyErr == nil {
+	if err := copy(filePath1, filePath2); err == nil {
 		t.Fatal("dest was overwritten with second call to copy!")
-	}
-	if !errors.Is(copyErr, syscall.EEXIST) {
-		t.Fatalf("a non-expected error has occurred: %d", copyErr)
+	} else if !errors.Is(err, syscall.EEXIST) {
+		t.Fatalf("a non-expected error has occurred: %d", err)
 	}
 }
 
@@ -141,11 +163,11 @@ func TestGetProgData(t *testing.T) {
 	progDataDir := appdirs.SiteDataDir(progname, "", "")
 	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
 
-	cargs := &cmdArgs{
+	pconfs := &progConfigs{
 		alias: "altaria",
 	}
 
-	if err := getProgData(cargs); err != nil {
+	if err := getProgData(pconfs.alias, false, pconfs); err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(progDataDir)
@@ -153,38 +175,118 @@ func TestGetProgData(t *testing.T) {
 	if _, err := os.Stat(progDataDir); errors.Is(err, fs.ErrNotExist) {
 		t.Fatal(err)
 	}
-
 	if _, err := os.Stat(comprtConfigsRepoPath); errors.Is(err, fs.ErrNotExist) {
 		t.Fatal(err)
 	}
 }
 
 func TestGetComprtIncludes(t *testing.T) {
-	tempDirPath, err := ioutil.TempDir("", "_"+tempDir)
+	tempDirPath, err := os.MkdirTemp("", "_"+tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tempDirPath)
 
-	pkgsByteString := []byte(strings.Join(pkgs, "\n"))
-	cargs := &cmdArgs{
+	pconfs := &progConfigs{
 		comprtConfigPath:   filepath.Join(tempDirPath, comprtConfigFile),
 		comprtIncludesPath: filepath.Join(tempDirPath, comprtIncludeFile),
 	}
 
-	if err := createTestFile(cargs.comprtIncludesPath, strings.Join(pkgs, "\n")); err != nil {
+	if err := createTestFile(pconfs.comprtIncludesPath, strings.Join(testPkgs, "\n")); err != nil {
 		t.Fatal(err)
 	}
 
 	var includePkgs []string
-	if getComprtIncludes(&includePkgs, cargs); !bytes.Equal([]byte(strings.Join(includePkgs, "\n")), pkgsByteString) {
+	pkgsByteString := []byte(strings.Join(testPkgs, "\n"))
+	getComprtIncludes(&includePkgs, pconfs.comprtIncludesPath)
+
+	if !bytes.Equal([]byte(strings.Join(includePkgs, "\n")), pkgsByteString) {
 		t.Fatalf("found the following packages \n%s", strings.Join(includePkgs, "\n"))
 	}
 }
 
+func TestLocateField(t *testing.T) {
+	var mountPointIndex int = 1
+	mountPoint, err := locateField(
+		"/etc/fstab",
+		regexp.MustCompile(`\s+`),
+		mountPointIndex,
+		mountPointIndex,
+		regexp.MustCompile(`^\/$`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if mountPoint != `/` {
+		t.Fatal("was unable to locate '/' mount point!")
+	}
+}
+
+func TestMountAndUnMountChrootFileSystems(t *testing.T) {
+	progDataDir, err := setupProgDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tempDirPath, err := os.MkdirTemp(progDataDir, "_"+tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDirPath)
+
+	var testTarget string = filepath.Join(tempDirPath, "testChroot")
+	if err := os.Mkdir(
+		testTarget,
+		os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	var rootStat *syscall.Stat_t = &syscall.Stat_t{}
+	if err := stat("/", rootStat); err != nil {
+		t.Fatal(err)
+	}
+
+	var deviceToMount string = "/proc"
+	var deviceStat *syscall.Stat_t = &syscall.Stat_t{}
+	if err := stat(deviceToMount, deviceStat); err != nil {
+		t.Fatal(err)
+	}
+
+	var testDirStat *syscall.Stat_t = &syscall.Stat_t{}
+	if _, err := mountChrootFileSystems([]string{deviceToMount}, testTarget); err != nil {
+		t.Fatal(err)
+	}
+	// Assume at this point the strong possibility that something was mounted to the
+	// test directory.
+	defer func() {
+		testDirStat = &syscall.Stat_t{}
+		if err := unMountChrootFileSystems([]string{deviceToMount}, testTarget); err != nil {
+			t.Fatal(err)
+		}
+		if err := stat(filepath.Join(testTarget, deviceToMount), testDirStat); err != nil {
+			t.Fatal(err)
+		}
+
+		// DISCUSS(cavcrosby): this test is banking on the notion that the root filesystem has a different
+		// device number than the device being mounted to the test directory. This seems
+		// straight forward and more than likely will be sufficient for my needs. That
+		// said, I'd like to compare this implementation to something like 'mountpoint.c'.
+		if rootStat.Dev != testDirStat.Dev {
+			t.Fatalf("%v was still mounted in test directory after unmounting", deviceToMount)
+		}
+	}()
+
+	if err := stat(filepath.Join(testTarget, deviceToMount), testDirStat); err != nil {
+		t.Fatal(err)
+	} else if deviceStat.Dev != testDirStat.Dev {
+		t.Fatalf("%v was not mounted in test directory", deviceToMount)
+	}
+}
+
 func TestChroot(t *testing.T) {
-	// e.g. /tmp/${tempDir} on Unix systems
-	tempDirPath, err := ioutil.TempDir("", "_"+tempDir)
+	tempDirPath, err := os.MkdirTemp("", "_"+tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,47 +299,44 @@ func TestChroot(t *testing.T) {
 	defer root.Close()
 
 	var parentRootStat *syscall.Stat_t = &syscall.Stat_t{}
-	parentStatErr := stat("/", parentRootStat)
-	if parentStatErr != nil {
+	if err := stat("/", parentRootStat); err != nil {
 		t.Fatal(err)
 	}
 
-	exitChroot, err := Chroot(tempDirPath)
-	if err != nil {
-		t.Fatal(err)
+	// For reference on determining if the process is in a chroot:
+	// https://unix.stackexchange.com/questions/14345/how-do-i-tell-im-running-in-a-chroot
+	exitChroot, errs := Chroot(tempDirPath)
+	if errs != nil {
+		t.Fatal(errs)
 	}
+	defer func() {
+		if err := exitChroot(); err != nil {
+			t.Fatal(err)
+		}
+
+		var rootStat2 *syscall.Stat_t = &syscall.Stat_t{}
+		if err := stat("/", rootStat2); err != nil {
+			t.Fatal(err)
+		}
+
+		if rootStat2.Ino != parentRootStat.Ino {
+			t.Fatal("was unable to exit chroot")
+		}
+	}()
 
 	var rootStat *syscall.Stat_t = &syscall.Stat_t{}
-	statErr := stat("/", rootStat)
-	if statErr != nil {
+	if err := stat("/", rootStat); err != nil {
 		t.Fatal(err)
 	}
 
 	if rootStat.Ino == parentRootStat.Ino {
 		t.Fatal("was unable to chroot into target")
 	}
-
-	if err := exitChroot("/", root); err != nil {
-		t.Fatal(err)
-	}
-
-	var rootStat2 *syscall.Stat_t = &syscall.Stat_t{}
-	statErr2 := stat("/", rootStat2)
-	if statErr2 != nil {
-		t.Fatal(err)
-	}
-
-	if rootStat2.Ino != parentRootStat.Ino {
-		t.Fatal("was unable to exit chroot")
-	}
 }
 
-func TestIntegration(t *testing.T) {
-	progDataDir := appdirs.SiteDataDir(progname, "", "")
-	_, err := os.Stat(progDataDir)
-	if errors.Is(err, fs.ErrNotExist) {
-		os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
-	} else if err != nil {
+func TestMountAndUnMountChrootFileSystemsRecoveryIntegration(t *testing.T) {
+	progDataDir, err := setupProgDataDir()
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -247,40 +346,78 @@ func TestIntegration(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDirPath)
 
-	var codename, target, chrootTestFilePath, comprtConfigFileContents string
-	codename = "buster"
-	target = filepath.Join(tempDirPath, "testChroot")
-	chrootTestFilePath = filepath.Join("foo")
-	comprtConfigFileContents = fmt.Sprintf(`#!/bin/sh
-
-touch %s
-	`, chrootTestFilePath)
-
-	cargs := &cmdArgs{
-		comprtConfigPath:   filepath.Join(tempDirPath, comprtConfigFile),
-		comprtIncludesPath: filepath.Join(tempDirPath, comprtIncludeFile),
+	var testTarget string = filepath.Join(tempDirPath, "testChroot")
+	if err := os.Mkdir(
+		testTarget,
+		os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
+	); err != nil {
+		t.Fatal(err)
 	}
 
+	var sysDevice string = "/sys"
+	var procDevice string = "/proc"
+	var deviceToFileStats = map[string]*syscall.Stat_t{
+		sysDevice:  {},
+		procDevice: {},
+	}
+	var devicesToMount []string = []string{sysDevice, procDevice, "/foo"}
+	for k, v := range deviceToFileStats {
+		if err := stat(k, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fileSystemsMounted, _ := mountChrootFileSystems(devicesToMount, testTarget)
+	if err := unMountChrootFileSystems(fileSystemsMounted, testTarget); err != nil {
+		t.Fatal(err)
+	}
+
+	var testDirStat *syscall.Stat_t
+	for k, v := range deviceToFileStats {
+		testDirStat = &syscall.Stat_t{}
+		if err := stat(filepath.Join(testTarget, k), testDirStat); err != nil {
+			t.Fatal(err)
+		} else if v.Dev == testDirStat.Dev {
+			t.Fatalf("%v was mounted in test directory", k)
+		}
+	}
+}
+
+func TestCreateCommandIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
-	mkTargetErr := os.Mkdir(
-		target,
+	progDataDir, err := setupProgDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tempDirPath, err := os.MkdirTemp(progDataDir, "_"+tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDirPath)
+
+	var testTarget string = filepath.Join(tempDirPath, "testChroot")
+	if err := os.Mkdir(
+		testTarget,
 		os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
-	)
-	if mkTargetErr != nil {
-		t.Fatal(mkTargetErr)
-	}
-
-	if err := createTestFile(cargs.comprtIncludesPath, strings.Join(pkgs, "\n")); err != nil {
-		t.Fatal(err)
-	}
-	if err := createTestFile(cargs.comprtConfigPath, comprtConfigFileContents); err != nil {
+	); err != nil {
 		t.Fatal(err)
 	}
 
-	debcomprtCmd := exec.Command("debcomprt", "--includes-path", cargs.comprtIncludesPath, "--config-path", cargs.comprtConfigPath, codename, target)
+	var comprtIncludesPath string = filepath.Join(tempDirPath, comprtIncludeFile)
+	if err := createTestFile(comprtIncludesPath, strings.Join(testPkgs, "\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	var comprtConfigPath string = filepath.Join(tempDirPath, comprtConfigFile)
+	if err := createTestFile(comprtConfigPath, testComprtConfigFileContents); err != nil {
+		t.Fatal(err)
+	}
+
+	debcomprtCmd := exec.Command("debcomprt", "create", "--includes-path", comprtIncludesPath, "--config-path", comprtConfigPath, testCodeCame, testTarget)
 	if testing.Verbose() {
 		debcomprtCmd.Stdout = os.Stdout
 		debcomprtCmd.Stderr = os.Stderr
@@ -292,30 +429,21 @@ touch %s
 		t.Fatal(err)
 	}
 
-	// returning back to the residing directory before entering the chroot,
-	// for reference:
-	// https://devsidestory.com/exit-from-a-chroot-with-golang/
-	pwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
+	exitChroot, errs := Chroot(testTarget)
+	if errs != nil {
+		t.Fatal(errs)
 	}
-	fdPwd, err := os.Open(pwd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer fdPwd.Close()
+	defer func() {
+		if err := exitChroot(); err != nil {
+			t.Fatal(err)
+		}
+	}()
 
-	if err := syscall.Chroot(target); err != nil {
-		t.Fatal(err)
-	}
-	if err := syscall.Chdir("/"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(chrootTestFilePath); errors.Is(err, fs.ErrNotExist) {
-		t.Fatal(err)
+	if _, err := os.Stat(testComprtConfigFileChrootPath); errors.Is(err, fs.ErrNotExist) {
+		t.Error(err)
 	}
 
-	for _, pkg := range pkgs {
+	for _, pkg := range testPkgs {
 		dpkgQueryCmd := exec.Command("dpkg-query", "--show", pkg)
 		if testing.Verbose() {
 			dpkgQueryCmd.Stdout = os.Stdout
@@ -329,9 +457,94 @@ touch %s
 			t.Error(err)
 		}
 	}
+}
 
-	fdPwd.Chdir()
-	if err := syscall.Chroot("."); err != nil {
+func TestChrootCommandIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	progDataDir, err := setupProgDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tempDirPath, err := os.MkdirTemp(progDataDir, "_"+tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDirPath)
+
+	var testTarget string = filepath.Join(tempDirPath, "testChroot")
+	pconfs := &progConfigs{
+		comprtConfigPath: filepath.Join(tempDirPath, comprtConfigFile),
+		target:           testTarget,
+	}
+
+	if err := os.Mkdir(
+		pconfs.target,
+		os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_W|OS_GROUP_X|OS_OTH_R|OS_OTH_W|OS_OTH_X),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := createTestFile(pconfs.comprtConfigPath, testComprtConfigFileContents); err != nil {
+		t.Fatal(err)
+	}
+
+	var debootstrapCmdArr []string
+	createDebootstrapArgList(
+		&debootstrapCmdArr,
+		nil,
+		"",
+		testCodeCame,
+		pconfs.target,
+		defaultMirrorMappings[testCodeCame],
+	)
+	if errs := createComprt(pconfs.comprtConfigPath, pconfs.target, noAlias, "", false, &debootstrapCmdArr); errs != nil {
+		t.Fatal(errs)
+	}
+
+	debcomprtCmd := exec.Command("debcomprt", "chroot", testTarget)
+	if testing.Verbose() {
+		debcomprtCmd.Stderr = os.Stderr
+	}
+	debcomprtCmdStdin, err := debcomprtCmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	debcomprtCmdStdout, err := debcomprtCmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := debcomprtCmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(debcomprtCmdStdin, "id --user\n"); err != nil {
+		t.Fatal(err)
+	}
+
+	r := bufio.NewReader(debcomprtCmdStdout)
+	debcomprtOut, err := r.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		t.Fatal(err)
+	}
+	if debcomprtOut == "" {
+		t.Fatal("unable to get effective uid of shell running in chroot")
+	}
+
+	uid, err := strconv.Atoi(strings.TrimSuffix(debcomprtOut, "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uid != defaultComprtUid {
+		t.Fatal("was unable to chroot into target with the default comprt uid!")
+	}
+	// needed to send EOF to the interactive shell
+	debcomprtCmdStdin.Close()
+
+	if err := debcomprtCmd.Wait(); err != nil {
 		t.Fatal(err)
 	}
 }
