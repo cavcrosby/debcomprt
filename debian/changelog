@@ -1,3 +1,22 @@
+debcomprt (2.0.0-1) stable; urgency=medium
+
+  * Have debcomprt run as subcommands now.
+  * Implement chroot command for debcomprt to use with comprts.
+  * Fix dangling chroot issue, per a done TODO:
+    It was discovered that exitChroot was not deferred in MANY
+    cases. Meaning, if any part of the code after the Chroot returned an
+    err, then exitChroot would never be called. Leading to possibly a 
+    defunct system.
+  * Quiet option has now been implemented in the code.
+  * Comprtinc no longer uses a file extension. Codebase has been updated
+    to reflect this.
+  * For mounting filesystems, in the event the device is not recognized, a
+    default case has been added for default permissions. Though, this should be
+    used with discretion.
+  * These releases will now be under a 'stable' distribution.
+
+ -- Conner Crosby <conner@cavcrosby.tech>  Tue, 12 Oct 2021 23:52:46 -0400
+
 debcomprt (1.0.0-2) UNRELEASED; urgency=medium
 
   * Created a basic tree versioning policy in README.

@@ -8,14 +8,15 @@ Standards-Version: 4.6.0.1
 Homepage: https://github.com/cavcrosby/debcomprt
 
 Package: debcomprt
-Version: 1.0.0-2
 Architecture: any
 Depends: debootstrap (>= 1.0.123),
          make (>= 4.3),
          ${misc:Depends},
          ${shlibs:Depends}
-Description: Creates debian compartments, an underlying 'target' generated from debootstrap
+Description: Manages debian compartments, an underlying 'target' generated from debootstrap
  Debian compartments are chrooted environments created normally with deboostrap
- but with added configuration. Currently those are:
+ but with added configuration. Features include:
   - A named configuration script to configure the chrooted environment
   - A optional file that will have debootstrap install additional packages
+  - The ability to chroot with appropriate filesystems mounted for normal system
+  usage
