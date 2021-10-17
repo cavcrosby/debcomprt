@@ -5,10 +5,8 @@
 # recursive variables
 SHELL = /usr/bin/sh
 BUILD_DIR = ./build
-CONFIGS_DIR = ./configs
 TARGET_EXEC = debcomprt
 target_exec_path = ${BUILD_DIR}/${TARGET_EXEC}
-export PROG_DATA_DIR = /usr/local/share/debcomprt
 UPSTREAM_TARBALL_EXT = .orig.tar.gz
 
 # DISCUSS(cavcrosby): according to the make manual, every makefile should define
@@ -17,9 +15,7 @@ UPSTREAM_TARBALL_EXT = .orig.tar.gz
 # executables
 GO = go
 GIT = git
-SUDO = sudo
 ADDLICENSE = addlicense
-ENVSUBST = envsubst
 executables = \
 	${GIT}\
 	${GO}
@@ -30,21 +26,15 @@ GO_TOOLS = github.com/google/addlicense
 
 # gnu install directory variables, for reference:
 # https://golang.org/doc/tutorial/compile-install
-prefix = /usr/local
-sysconfdir = ${prefix}/etc
+prefix = $(shell if [ -n "${GOBIN}" ]; then echo "${GOBIN}"; else echo "${GOPATH}/bin"; fi)
 exec_prefix = ${prefix}
 bin_dir = ${exec_prefix}/bin
-
-# 1. installing any config files should be more explicity done in this make file
-# 2. somehow link the program data dir in with the binary (e.g. jailtime has a good example of doing this, allows us in not having to make go source into templates)
 
 # targets
 HELP = help
 INSTALL = install
-UNINSTALL = uninstall
 INSTALL_TOOLS = install-tools
 TEST = test
-CONFIGS = configs
 ADD_LICENSE = add-license
 UPSTREAM_TARBALL = upstream-tarball
 DEB = deb
@@ -61,16 +51,11 @@ ifeq (${version},)
 else
 	override version := $(shell echo ${version} | sed 's/v//')
 endif
-
 src := $(shell find . \( -type f \) -and \( -iname '*.go' \) -and \( -not -iregex '.*/vendor.*' \))
 _upstream_tarball_prefix = ${TARGET_EXEC}-${version}
 _upstream_tarball = ${_upstream_tarball_prefix}${UPSTREAM_TARBALL_EXT}
 _upstream_tarball_dash_to_underscore = $(shell echo "${_upstream_tarball}" | awk --field-separator='-' '{print $$1"_"$$2}')
 _upstream_tarball_path = ${BUILD_DIR}/${_upstream_tarball}
-
-JSON_EXT := .json
-SHELL_TEMPLATE_EXT := .shtpl
-json_shell_template_ext := ${JSON_EXT}${SHELL_TEMPLATE_EXT}
 
 # inspired from:
 # https://stackoverflow.com/questions/5618615/check-if-a-program-exists-from-a-makefile#answer-25668869
@@ -81,8 +66,7 @@ ${HELP}:
 	# inspired by the makefiles of the Linux kernel and Mercurial
 >	@echo 'Common make targets:'
 >	@echo '  ${TARGET_EXEC}          - the ${TARGET_EXEC} binary'
->	@echo '  ${INSTALL}            - installs the decomprt binary and other needed files'
->	@echo '  ${UNINSTALL}          - uninstalls the decomprt binary and other needed files'
+>	@echo '  ${INSTALL}            - installs the local decomprt binary (pathing: ${prefix})'
 >	@echo '  ${INSTALL_TOOLS}      - installs the development tools used for the project'
 >	@echo '  ${TEST}               - runs test suite for the project'
 >	@echo '  ${ADD_LICENSE}        - adds license header to src files'
@@ -93,18 +77,15 @@ ${HELP}:
 >	@echo '                          (e.g. "John Smith, Alice Smith" or "John Smith")'
 
 ${TARGET_EXEC}: debcomprt.go
->	${GO} generate -mod vendor ./...
 >	${GO} build -o "${target_exec_path}" -buildmode=pie -mod vendor
 
 .PHONY: ${INSTALL}
-${INSTALL}: ${TARGET_EXEC} ${CONFIGS}
->	${SUDO} ${INSTALL} "${target_exec_path}" "${DESTDIR}${bin_dir}"
->	${SUDO} ${INSTALL} --mode=644 "${CONFIGS_DIR}/debcomprt${JSON_EXT}" "${DESTDIR}${sysconfdir}/debcomprt"
-
-.PHONY: ${UNINSTALL}
-${UNINSTALL}:
->	${SUDO} rm --force "${DESTDIR}${bin_dir}/${TARGET_EXEC}"
->	${SUDO} rm --recursive --force "${DESTDIR}${sysconfdir}/debcomprt"
+${INSTALL}: ${TARGET_EXEC}
+ifdef DPKG_INSTALL
+>	${INSTALL} "${target_exec_path}" "${DESTDIR}${bin_dir}"
+else
+>	${GO} install
+endif
 
 .PHONY: ${INSTALL_TOOLS}
 ${INSTALL_TOOLS}:
@@ -112,26 +93,17 @@ ${INSTALL_TOOLS}:
 
 .PHONY: ${TEST}
 ${TEST}:
-	# Trying to expand PATH once in root's shell does not seem to work. Hence the
-	# command substitution to get root's PATH.
-	#
-	# bin_dir may already be in root's PATH, but that's ok.
->	${GO} generate -mod vendor ./...
->	${SUDO} --shell PATH="${bin_dir}:$$(sudo --shell echo \$$PATH)" ${GO} test -v -mod vendor
+>	sudo PATH="${PATH}" ${GO} test -v -mod vendor
 
 .PHONY: ${ADD_LICENSE}
 ${ADD_LICENSE}:
 >	@[ -n "${COPYRIGHT_HOLDERS}" ] || { echo "COPYRIGHT_HOLDERS was not passed into make"; exit 1; }
 >	${ADDLICENSE} -l apache -c "${COPYRIGHT_HOLDERS}" ${src}
 
-.PHONY: ${CONFIGS}
-${CONFIGS}:
->	${ENVSUBST} '$${PROG_DATA_DIR}' < "${CONFIGS_DIR}/debcomprt${json_shell_template_ext}" > "${CONFIGS_DIR}/debcomprt${JSON_EXT}"
-
 .PHONY: ${UPSTREAM_TARBALL}
 ${UPSTREAM_TARBALL}: ${_upstream_tarball_path}
 
-${_upstream_tarball_path}: ${CONFIGS}
+${_upstream_tarball_path}:
 >	mkdir --parents "${BUILD_DIR}"
 >	tar zcf "$@" \
 		--transform 's,^\.,${_upstream_tarball_prefix},' \
@@ -144,18 +116,17 @@ ${_upstream_tarball_path}: ${CONFIGS}
 
 .PHONY: ${DEB}
 ${DEB}: ${_upstream_tarball_path}
-	# TODO(cavcrosby): lintian now issues the following error when building a deb package:
-	# 'debcomprt changes: bad-distribution-in-changes-file stable'.
-	# This should be resolved, though I am partially curious if this error exists for
-	# 'v2.0.0' of the package.
 >	cd "${BUILD_DIR}" \
 >	&& mv "${_upstream_tarball}" "${_upstream_tarball_dash_to_underscore}" \
 >	&& tar zxf "${_upstream_tarball_dash_to_underscore}" \
 >	&& cd "${_upstream_tarball_prefix}" \
 >	&& cp --recursive "${CURDIR}/debian" ./debian \
->	&& debuild --rootcmd=sudo --unsigned-source --unsigned-changes
+>	&& debuild -us -uc
 
 .PHONY: ${CLEAN}
 ${CLEAN}:
->	sudo rm --recursive --force "${BUILD_DIR}"
->	rm --force "${CONFIGS_DIR}/debcomprt${JSON_EXT}"
+>	rm --recursive --force "${BUILD_DIR}"
+
+.PHONY: foo
+foo:
+>	@echo ${version}

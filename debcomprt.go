@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:generate go github.com/cavcrosby/debcomprt/tools/genruntime_vars.go
-
 package main
 
 import (
@@ -33,6 +31,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cavcrosby/appdirs"
 	"github.com/go-git/go-git/v5"
 	"github.com/urfave/cli/v2"
 )
@@ -85,7 +84,6 @@ const (
 )
 
 var (
-	ProgDataDir string
 	reFindEnvVar = regexp.MustCompile(`(?P<name>^[a-zA-Z_]\w*)=(?P<value>.+)`)
 )
 
@@ -383,11 +381,12 @@ func locateField(fPath string, fieldSepRegex *regexp.Regexp, matchIndex, returnI
 
 // Get required extra data to be used by the program.
 func getProgData(alias string, preprocessAliases bool, pconfs *progConfigs) error {
-	comprtConfigsRepoPath := filepath.Join(ProgDataDir, comprtConfigsRepoName)
+	progDataDir := appdirs.SiteDataDir(progname, "", "")
+	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
 
 	if alias != noAlias {
-		if _, err := os.Stat(ProgDataDir); errors.Is(err, fs.ErrNotExist) {
-			os.MkdirAll(ProgDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
+		if _, err := os.Stat(progDataDir); errors.Is(err, fs.ErrNotExist) {
+			os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
 		} else if err != nil {
 			return err
 		}
@@ -851,7 +850,7 @@ func main() {
 		// To add, systemd processes cannot be controlled in a chroot. Thus, more research
 		// would need to be done if this feat would be desired to attempt. For reference:
 		// https://superuser.com/questions/688733/start-a-systemd-service-inside-chroot-from-a-non-systemd-based-rootfs
-
+		
 		if errs := runInteractiveChroot(pconfs.target); errs != nil {
 			log.Panic(errs)
 		}
