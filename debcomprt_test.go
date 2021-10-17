@@ -86,8 +86,8 @@ func stat(fPath string, stat *syscall.Stat_t) error {
 
 // Setup the program's data directory. Ensure any validation/checking is done here.
 func setupProgDataDir() error {
-	if _, err := os.Stat(progDataDir); errors.Is(err, fs.ErrNotExist) {
-		os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
+	if _, err := os.Stat(ProgDataDir); errors.Is(err, fs.ErrNotExist) {
+		os.MkdirAll(ProgDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
 	} else if err != nil {
 		return err
 	}
@@ -162,7 +162,7 @@ func TestGetProgData(t *testing.T) {
 		t.Fatal(err)
 	}
 	
-	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
+	comprtConfigsRepoPath := filepath.Join(ProgDataDir, comprtConfigsRepoName)
 
 	pconfs := &progConfigs{
 		alias: "altaria",
@@ -171,9 +171,9 @@ func TestGetProgData(t *testing.T) {
 	if err := getProgData(pconfs.alias, false, pconfs); err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(progDataDir)
+	defer os.RemoveAll(ProgDataDir)
 
-	if _, err := os.Stat(progDataDir); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(ProgDataDir); errors.Is(err, fs.ErrNotExist) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(comprtConfigsRepoPath); errors.Is(err, fs.ErrNotExist) {
@@ -230,7 +230,7 @@ func TestMountAndUnMountChrootFileSystems(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tempDirPath, err := os.MkdirTemp(progDataDir, "_"+tempDir)
+	tempDirPath, err := os.MkdirTemp(ProgDataDir, "_"+tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +341,7 @@ func TestMountAndUnMountChrootFileSystemsRecoveryIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tempDirPath, err := os.MkdirTemp(progDataDir, "_"+tempDir)
+	tempDirPath, err := os.MkdirTemp(ProgDataDir, "_"+tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +394,7 @@ func TestCreateCommandIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tempDirPath, err := os.MkdirTemp(progDataDir, "_"+tempDir)
+	tempDirPath, err := os.MkdirTemp(ProgDataDir, "_"+tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +470,7 @@ func TestChrootCommandIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tempDirPath, err := os.MkdirTemp(progDataDir, "_"+tempDir)
+	tempDirPath, err := os.MkdirTemp(ProgDataDir, "_"+tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}

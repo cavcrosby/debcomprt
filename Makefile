@@ -62,7 +62,6 @@ else
 	override version := $(shell echo ${version} | sed 's/v//')
 endif
 
-LDFLAGS := -X 'main.progDataDir=${PROG_DATA_DIR}'
 src := $(shell find . \( -type f \) -and \( -iname '*.go' \) -and \( -not -iregex '.*/vendor.*' \))
 _upstream_tarball_prefix = ${TARGET_EXEC}-${version}
 _upstream_tarball = ${_upstream_tarball_prefix}${UPSTREAM_TARBALL_EXT}
@@ -94,7 +93,8 @@ ${HELP}:
 >	@echo '                          (e.g. "John Smith, Alice Smith" or "John Smith")'
 
 ${TARGET_EXEC}: debcomprt.go
->	${GO} build -ldflags "${LDFLAGS}" -o "${target_exec_path}" -buildmode=pie -mod vendor
+>	${GO} generate -mod vendor ./...
+>	${GO} build -o "${target_exec_path}" -buildmode=pie -mod vendor
 
 .PHONY: ${INSTALL}
 ${INSTALL}: ${TARGET_EXEC} ${CONFIGS}
@@ -116,7 +116,8 @@ ${TEST}:
 	# command substitution to get root's PATH.
 	#
 	# bin_dir may already be in root's PATH, but that's ok.
->	${SUDO} --shell PATH="${bin_dir}:$$(sudo --shell echo \$$PATH)" ${GO} test -ldflags "${LDFLAGS}" -v -mod vendor
+>	${GO} generate -mod vendor ./...
+>	${SUDO} --shell PATH="${bin_dir}:$$(sudo --shell echo \$$PATH)" ${GO} test -v -mod vendor
 
 .PHONY: ${ADD_LICENSE}
 ${ADD_LICENSE}:

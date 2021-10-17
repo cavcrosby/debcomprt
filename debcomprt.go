@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:generate go github.com/cavcrosby/debcomprt/tools/genruntime_vars.go
+
 package main
 
 import (
@@ -83,7 +85,7 @@ const (
 )
 
 var (
-	progDataDir string
+	ProgDataDir string
 	reFindEnvVar = regexp.MustCompile(`(?P<name>^[a-zA-Z_]\w*)=(?P<value>.+)`)
 )
 
@@ -381,11 +383,11 @@ func locateField(fPath string, fieldSepRegex *regexp.Regexp, matchIndex, returnI
 
 // Get required extra data to be used by the program.
 func getProgData(alias string, preprocessAliases bool, pconfs *progConfigs) error {
-	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
+	comprtConfigsRepoPath := filepath.Join(ProgDataDir, comprtConfigsRepoName)
 
 	if alias != noAlias {
-		if _, err := os.Stat(progDataDir); errors.Is(err, fs.ErrNotExist) {
-			os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
+		if _, err := os.Stat(ProgDataDir); errors.Is(err, fs.ErrNotExist) {
+			os.MkdirAll(ProgDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
 		} else if err != nil {
 			return err
 		}
