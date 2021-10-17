@@ -31,7 +31,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cavcrosby/appdirs"
 	"github.com/go-git/go-git/v5"
 	"github.com/urfave/cli/v2"
 )
@@ -84,6 +83,7 @@ const (
 )
 
 var (
+	progDataDir string
 	reFindEnvVar = regexp.MustCompile(`(?P<name>^[a-zA-Z_]\w*)=(?P<value>.+)`)
 )
 
@@ -381,7 +381,6 @@ func locateField(fPath string, fieldSepRegex *regexp.Regexp, matchIndex, returnI
 
 // Get required extra data to be used by the program.
 func getProgData(alias string, preprocessAliases bool, pconfs *progConfigs) error {
-	progDataDir := appdirs.SiteDataDir(progname, "", "")
 	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
 
 	if alias != noAlias {
@@ -850,7 +849,7 @@ func main() {
 		// To add, systemd processes cannot be controlled in a chroot. Thus, more research
 		// would need to be done if this feat would be desired to attempt. For reference:
 		// https://superuser.com/questions/688733/start-a-systemd-service-inside-chroot-from-a-non-systemd-based-rootfs
-		
+
 		if errs := runInteractiveChroot(pconfs.target); errs != nil {
 			log.Panic(errs)
 		}

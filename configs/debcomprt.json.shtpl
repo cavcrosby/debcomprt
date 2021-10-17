@@ -1,0 +1,5 @@
+{
+    "maintainer": {
+        "program_data_dir": "${PROG_DATA_DIR}"
+    }
+}

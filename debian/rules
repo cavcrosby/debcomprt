@@ -9,8 +9,11 @@
 override_dh_auto_test:
 >	@echo "skip running tests"
 
+override_dh_auto_clean:
+>	@echo "skip cleaning source dir"
+
 override_dh_auto_install:
->	$(MAKE) --jobs=12 install DESTDIR="${CURDIR}/debian/debcomprt" prefix=/usr/local DPKG_INSTALL=true AM_UPDATE_INFO_DIR=no INSTALL="install --strip-program=true"
+>	$(MAKE) --jobs=12 INSTALL=install DESTDIR="${CURDIR}/debian/debcomprt" DPKG_INSTALL=true prefix=/usr/local install
 
 override_dh_usrlocal:
 	# Not ideal, but only packages from the debian archive should go into '/usr/' vs
