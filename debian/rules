@@ -9,9 +9,6 @@
 override_dh_auto_test:
 >	@echo "skip running tests"
 
-override_dh_auto_clean:
->	@echo "skip cleaning source dir"
-
 override_dh_auto_install:
 >	$(MAKE) --jobs=12 INSTALL=install DESTDIR="${CURDIR}/debian/debcomprt" DPKG_INSTALL=true prefix=/usr/local install
 

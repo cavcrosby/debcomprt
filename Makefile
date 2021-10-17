@@ -5,7 +5,6 @@
 # recursive variables
 SHELL = /usr/bin/sh
 BUILD_DIR = ./build
-CONFIGS_DIR = ./configs
 TARGET_EXEC = debcomprt
 target_exec_path = ${BUILD_DIR}/${TARGET_EXEC}
 export PROG_DATA_DIR = /usr/local/share/debcomprt
@@ -19,7 +18,6 @@ GO = go
 GIT = git
 SUDO = sudo
 ADDLICENSE = addlicense
-ENVSUBST = envsubst
 executables = \
 	${GIT}\
 	${GO}
@@ -31,12 +29,8 @@ GO_TOOLS = github.com/google/addlicense
 # gnu install directory variables, for reference:
 # https://golang.org/doc/tutorial/compile-install
 prefix = /usr/local
-sysconfdir = ${prefix}/etc
 exec_prefix = ${prefix}
 bin_dir = ${exec_prefix}/bin
-
-# 1. installing any config files should be more explicity done in this make file
-# 2. somehow link the program data dir in with the binary (e.g. jailtime has a good example of doing this, allows us in not having to make go source into templates)
 
 # targets
 HELP = help
@@ -44,7 +38,6 @@ INSTALL = install
 UNINSTALL = uninstall
 INSTALL_TOOLS = install-tools
 TEST = test
-CONFIGS = configs
 ADD_LICENSE = add-license
 UPSTREAM_TARBALL = upstream-tarball
 DEB = deb
@@ -93,18 +86,15 @@ ${HELP}:
 >	@echo '                          (e.g. "John Smith, Alice Smith" or "John Smith")'
 
 ${TARGET_EXEC}: debcomprt.go
->	${GO} generate -mod vendor ./...
 >	${GO} build -o "${target_exec_path}" -buildmode=pie -mod vendor
 
 .PHONY: ${INSTALL}
-${INSTALL}: ${TARGET_EXEC} ${CONFIGS}
+${INSTALL}: ${TARGET_EXEC}
 >	${SUDO} ${INSTALL} "${target_exec_path}" "${DESTDIR}${bin_dir}"
->	${SUDO} ${INSTALL} --mode=644 "${CONFIGS_DIR}/debcomprt${JSON_EXT}" "${DESTDIR}${sysconfdir}/debcomprt"
 
 .PHONY: ${UNINSTALL}
 ${UNINSTALL}:
 >	${SUDO} rm --force "${DESTDIR}${bin_dir}/${TARGET_EXEC}"
->	${SUDO} rm --recursive --force "${DESTDIR}${sysconfdir}/debcomprt"
 
 .PHONY: ${INSTALL_TOOLS}
 ${INSTALL_TOOLS}:
@@ -116,7 +106,6 @@ ${TEST}:
 	# command substitution to get root's PATH.
 	#
 	# bin_dir may already be in root's PATH, but that's ok.
->	${GO} generate -mod vendor ./...
 >	${SUDO} --shell PATH="${bin_dir}:$$(sudo --shell echo \$$PATH)" ${GO} test -v -mod vendor
 
 .PHONY: ${ADD_LICENSE}
@@ -124,14 +113,10 @@ ${ADD_LICENSE}:
 >	@[ -n "${COPYRIGHT_HOLDERS}" ] || { echo "COPYRIGHT_HOLDERS was not passed into make"; exit 1; }
 >	${ADDLICENSE} -l apache -c "${COPYRIGHT_HOLDERS}" ${src}
 
-.PHONY: ${CONFIGS}
-${CONFIGS}:
->	${ENVSUBST} '$${PROG_DATA_DIR}' < "${CONFIGS_DIR}/debcomprt${json_shell_template_ext}" > "${CONFIGS_DIR}/debcomprt${JSON_EXT}"
-
 .PHONY: ${UPSTREAM_TARBALL}
 ${UPSTREAM_TARBALL}: ${_upstream_tarball_path}
 
-${_upstream_tarball_path}: ${CONFIGS}
+${_upstream_tarball_path}:
 >	mkdir --parents "${BUILD_DIR}"
 >	tar zcf "$@" \
 		--transform 's,^\.,${_upstream_tarball_prefix},' \
@@ -153,9 +138,8 @@ ${DEB}: ${_upstream_tarball_path}
 >	&& tar zxf "${_upstream_tarball_dash_to_underscore}" \
 >	&& cd "${_upstream_tarball_prefix}" \
 >	&& cp --recursive "${CURDIR}/debian" ./debian \
->	&& debuild --rootcmd=sudo --unsigned-source --unsigned-changes
+>	&& debuild --unsigned-source --unsigned-changes
 
 .PHONY: ${CLEAN}
 ${CLEAN}:
->	sudo rm --recursive --force "${BUILD_DIR}"
->	rm --force "${CONFIGS_DIR}/debcomprt${JSON_EXT}"
+>	rm --recursive --force "${BUILD_DIR}"

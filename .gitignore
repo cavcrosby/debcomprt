@@ -16,6 +16,6 @@
 
 # repo specfic
 /build
-/configs/*.json
+runtime_vars.go
 comprtconfig
 comprtinc
