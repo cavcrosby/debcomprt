@@ -16,6 +16,5 @@
 
 # repo specfic
 /build
-/configs/*.json
 comprtconfig
 comprtinc
