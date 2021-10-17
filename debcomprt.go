@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:generate go run -mod=vendor github.com/cavcrosby/genruntime-vars
 package main
 
 import (

@@ -8,6 +8,7 @@ BUILD_DIR = ./build
 TARGET_EXEC = debcomprt
 target_exec_path = ${BUILD_DIR}/${TARGET_EXEC}
 export PROG_DATA_DIR = /usr/local/share/debcomprt
+export RUNTIME_VARS_FILE = runtime_vars.go
 UPSTREAM_TARBALL_EXT = .orig.tar.gz
 
 # DISCUSS(cavcrosby): according to the make manual, every makefile should define
@@ -24,7 +25,8 @@ executables = \
 
 # tools, inspired by:
 # https://stackoverflow.com/questions/56636580/replace-retool-with-tools-go-for-multi-developer-and-ci-environments-using-go-mo#answer-56640587
-GO_TOOLS = github.com/google/addlicense
+GO_TOOLS = github.com/cavcrosby/genruntime-vars
+OPT_GO_TOOLS = github.com/google/addlicense
 
 # gnu install directory variables, for reference:
 # https://golang.org/doc/tutorial/compile-install
@@ -37,6 +39,7 @@ HELP = help
 INSTALL = install
 UNINSTALL = uninstall
 INSTALL_TOOLS = install-tools
+INSTALL_NEEDED_TOOLS = install-needed-tools
 TEST = test
 ADD_LICENSE = add-license
 UPSTREAM_TARBALL = upstream-tarball
@@ -76,7 +79,7 @@ ${HELP}:
 >	@echo '  ${TARGET_EXEC}          - the ${TARGET_EXEC} binary'
 >	@echo '  ${INSTALL}            - installs the decomprt binary and other needed files'
 >	@echo '  ${UNINSTALL}          - uninstalls the decomprt binary and other needed files'
->	@echo '  ${INSTALL_TOOLS}      - installs the development tools used for the project'
+>	@echo '  ${INSTALL_TOOLS}      - installs optional development tools used for the project'
 >	@echo '  ${TEST}               - runs test suite for the project'
 >	@echo '  ${ADD_LICENSE}        - adds license header to src files'
 >	@echo '  ${DEB}                - generates the project'\''s debian package(s)'
@@ -85,7 +88,12 @@ ${HELP}:
 >	@echo '  COPYRIGHT_HOLDERS     - string denoting copyright holder(s)/author(s)'
 >	@echo '                          (e.g. "John Smith, Alice Smith" or "John Smith")'
 
-${TARGET_EXEC}: debcomprt.go
+.PHONY: ${INSTALL_NEEDED_TOOLS}
+${INSTALL_NEEDED_TOOLS}:
+>	${GO} install -mod vendor ${GO_TOOLS}
+
+${TARGET_EXEC}: debcomprt.go ${INSTALL_NEEDED_TOOLS}
+>	go generate -mod=vendor
 >	${GO} build -o "${target_exec_path}" -buildmode=pie -mod vendor
 
 .PHONY: ${INSTALL}
@@ -98,18 +106,19 @@ ${UNINSTALL}:
 
 .PHONY: ${INSTALL_TOOLS}
 ${INSTALL_TOOLS}:
->	${GO} install -mod vendor ${GO_TOOLS}
+>	${GO} install -mod vendor ${OPT_GO_TOOLS}
 
 .PHONY: ${TEST}
-${TEST}:
+${TEST}: ${INSTALL_NEEDED_TOOLS}
 	# Trying to expand PATH once in root's shell does not seem to work. Hence the
 	# command substitution to get root's PATH.
 	#
 	# bin_dir may already be in root's PATH, but that's ok.
+>	go generate -mod=vendor
 >	${SUDO} --shell PATH="${bin_dir}:$$(sudo --shell echo \$$PATH)" ${GO} test -v -mod vendor
 
 .PHONY: ${ADD_LICENSE}
-${ADD_LICENSE}:
+${ADD_LICENSE}: ${INSTALL_TOOLS}
 >	@[ -n "${COPYRIGHT_HOLDERS}" ] || { echo "COPYRIGHT_HOLDERS was not passed into make"; exit 1; }
 >	${ADDLICENSE} -l apache -c "${COPYRIGHT_HOLDERS}" ${src}
 
@@ -143,3 +152,4 @@ ${DEB}: ${_upstream_tarball_path}
 .PHONY: ${CLEAN}
 ${CLEAN}:
 >	rm --recursive --force "${BUILD_DIR}"
+>	rm --force "${RUNTIME_VARS_FILE}"
