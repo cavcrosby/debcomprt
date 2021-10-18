@@ -6,9 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"text/template"
 )
 
@@ -96,14 +94,14 @@ func main() {
 		log.Panic(err)
 	}
 
-	gitCmdOut, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	pwd, err := os.Getwd()
 	if err != nil {
 		log.Panic(err)
 	}
 
 	if err := ioutil.WriteFile(
 		filepath.Join(
-			strings.TrimSuffix(string(gitCmdOut), "\n"),
+			pwd,
 			outputFileName,
 		),
 		buf.Bytes(),

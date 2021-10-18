@@ -3,7 +3,7 @@ module github.com/cavcrosby/debcomprt
 go 1.17
 
 require (
-	github.com/cavcrosby/genruntime-vars v1.0.1
+	github.com/cavcrosby/genruntime-vars v1.0.2
 	github.com/go-git/go-git/v5 v5.4.2
 	github.com/google/addlicense v1.0.0
 	github.com/urfave/cli/v2 v2.3.0

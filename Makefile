@@ -142,14 +142,16 @@ ${DEB}: ${_upstream_tarball_path}
 	# 'debcomprt changes: bad-distribution-in-changes-file stable'.
 	# This should be resolved, though I am partially curious if this error exists for
 	# 'v2.0.0' of the package.
+	# DISCUSS(cavcrosby): add the debian source package to be uploaded as well to
+	# artifactory.
 >	cd "${BUILD_DIR}" \
 >	&& mv "${_upstream_tarball}" "${_upstream_tarball_dash_to_underscore}" \
 >	&& tar zxf "${_upstream_tarball_dash_to_underscore}" \
 >	&& cd "${_upstream_tarball_prefix}" \
 >	&& cp --recursive "${CURDIR}/debian" ./debian \
->	&& debuild --unsigned-source --unsigned-changes
+>	&& debuild --rootcmd=sudo --unsigned-source --unsigned-changes
 
 .PHONY: ${CLEAN}
 ${CLEAN}:
->	rm --recursive --force "${BUILD_DIR}"
+>	${SUDO} rm --recursive --force "${BUILD_DIR}"
 >	rm --force "${RUNTIME_VARS_FILE}"
