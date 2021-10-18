@@ -13,7 +13,16 @@ import (
 )
 
 const (
-	progname       = "genruntime_vars"
+	progname = "genruntime_vars"
+
+	// DISCUSS(cavcrosby): outputFileName is one example where make can also control
+	// the value of the variable. Eventually, I'd like to generalize the program to
+	// work with other projects too. That said, there is plenty of design work todo.
+	//
+	// Initially, the thought was perhaps this program could take a struct and
+	// template as arguments. Then, depending if we want to stick on using env vars
+	// to gather the values for certain runtime vars, then we would have to come up
+	// with a mechanism for deciding how the env var names will be determined.
 	outputFileName = "runtime_vars.go"
 )
 
@@ -53,12 +62,13 @@ var (
 func init() {
 	{{ if .ProgDataDir -}}
 		progDataDir = "{{ .ProgDataDir }}"
-	{{ else -}}
+	{{- else -}}
 		progDataDir = "/usr/local/share/debcomprt"
 	{{- end }}
 }
 `
 
+// TODO(cavcrosby): add type comment
 type runtimeVars struct {
 	ProgDataDir   string
 	TargetPackage string
