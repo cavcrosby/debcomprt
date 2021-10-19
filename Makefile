@@ -11,6 +11,11 @@ export PROG_DATA_DIR = /usr/local/share/debcomprt
 export RUNTIME_VARS_FILE = runtime_vars.go
 UPSTREAM_TARBALL_EXT = .orig.tar.gz
 
+# common vars to be used in packaging maintainer scripts
+_PROG_DATA_DIR = $${PROG_DATA_DIR}
+maintainer_scripts_vars = \
+	${_PROG_DATA_DIR}
+
 # DISCUSS(cavcrosby): according to the make manual, every makefile should define
 # the INSTALL variable. Perhaps look into this later? How does this affect
 # previous makefiles?
@@ -18,6 +23,7 @@ UPSTREAM_TARBALL_EXT = .orig.tar.gz
 GO = go
 GIT = git
 SUDO = sudo
+ENVSUBST = envsubst
 ADDLICENSE = addlicense
 executables = \
 	${GIT}\
@@ -42,6 +48,7 @@ INSTALL_TOOLS = install-tools
 INSTALL_NEEDED_TOOLS = install-needed-tools
 TEST = test
 ADD_LICENSE = add-license
+MAINTAINER_SCRIPTS = maintainer-scripts
 UPSTREAM_TARBALL = upstream-tarball
 DEB = deb
 CLEAN = clean
@@ -64,9 +71,17 @@ _upstream_tarball = ${_upstream_tarball_prefix}${UPSTREAM_TARBALL_EXT}
 _upstream_tarball_dash_to_underscore = $(shell echo "${_upstream_tarball}" | awk --field-separator='-' '{print $$1"_"$$2}')
 _upstream_tarball_path = ${BUILD_DIR}/${_upstream_tarball}
 
-JSON_EXT := .json
 SHELL_TEMPLATE_EXT := .shtpl
-json_shell_template_ext := ${JSON_EXT}${SHELL_TEMPLATE_EXT}
+shell_template_wildcard := %${SHELL_TEMPLATE_EXT}
+# DISCUSS(cavcrosby): there are other cases where I manually conjoin the path for
+# the expected file(s) to be generated from shell template(s). I will want to look
+# into making things more consistent. This includes perhaps putting the debian
+# directory path into a variable.
+maintainer_script_shell_templates := $(shell find ./debian -name *${SHELL_TEMPLATE_EXT})
+
+# Determines the maintainer script name(s) to be generated from the template(s).
+# Short hand notation for string substitution: $(text:pattern=replacement).
+maintainer_scripts := $(maintainer_script_shell_templates:${SHELL_TEMPLATE_EXT}=)
 
 # inspired from:
 # https://stackoverflow.com/questions/5618615/check-if-a-program-exists-from-a-makefile#answer-25668869
@@ -122,10 +137,16 @@ ${ADD_LICENSE}: ${INSTALL_TOOLS}
 >	@[ -n "${COPYRIGHT_HOLDERS}" ] || { echo "COPYRIGHT_HOLDERS was not passed into make"; exit 1; }
 >	${ADDLICENSE} -l apache -c "${COPYRIGHT_HOLDERS}" ${src}
 
+.PHONY: ${MAINTAINER_SCRIPTS}
+${MAINTAINER_SCRIPTS}: ${maintainer_scripts}
+
+${maintainer_scripts}: ${maintainer_script_shell_templates}
+>	${ENVSUBST} '${maintainer_scripts_vars}' < "$<" > "$@"
+
 .PHONY: ${UPSTREAM_TARBALL}
 ${UPSTREAM_TARBALL}: ${_upstream_tarball_path}
 
-${_upstream_tarball_path}:
+${_upstream_tarball_path}: ${MAINTAINER_SCRIPTS}
 >	mkdir --parents "${BUILD_DIR}"
 >	tar zcf "$@" \
 		--transform 's,^\.,${_upstream_tarball_prefix},' \
@@ -144,6 +165,10 @@ ${DEB}: ${_upstream_tarball_path}
 	# 'v2.0.0' of the package.
 	# DISCUSS(cavcrosby): add the debian source package to be uploaded as well to
 	# artifactory.
+	# DISCUSS(cavcrosby): inspect other projects where shell templates are used. In
+	# the case that shell templates are used for normal shell scripts, replace each
+	# double quoted shell variable to be evaluated by envsubst in single quotes to
+	# differentiate those to be evaluated by envsubst and those not.
 >	cd "${BUILD_DIR}" \
 >	&& mv "${_upstream_tarball}" "${_upstream_tarball_dash_to_underscore}" \
 >	&& tar zxf "${_upstream_tarball_dash_to_underscore}" \
@@ -154,4 +179,6 @@ ${DEB}: ${_upstream_tarball_path}
 .PHONY: ${CLEAN}
 ${CLEAN}:
 >	${SUDO} rm --recursive --force "${BUILD_DIR}"
+	# match filename(s) generated from their respective shell template(s)
+>	rm --force $$(find ./debian | grep --only-matching --perl-regexp '[\w\.\/]+(?=\.shtpl)')
 >	rm --force "${RUNTIME_VARS_FILE}"
