@@ -35,7 +35,9 @@ jobs:
       run: sudo apt-get install build-essential debhelper debootstrap devscripts --assume-yes
 
     - name: Build deb
-      run: make version=${{ env.GIT_TAG }} deb
+      run: |
+        make setup
+        make version=${{ env.GIT_TAG }} deb
 
     - uses: jfrog/setup-jfrog-cli@v2
       env:

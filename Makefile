@@ -174,10 +174,6 @@ ${_upstream_tarball_path}: ${MAINTAINER_SCRIPTS}
 
 .PHONY: ${DEB}
 ${DEB}: ${_upstream_tarball_path}
-	# TODO(cavcrosby): lintian now issues the following error when building a deb package:
-	# 'debcomprt changes: bad-distribution-in-changes-file stable'.
-	# This should be resolved, though I am partially curious if this error exists for
-	# 'v2.0.0' of the package.
 	# DISCUSS(cavcrosby): add the debian source package to be uploaded as well to
 	# artifactory.
 	# DISCUSS(cavcrosby): inspect other projects where shell templates are used. In
@@ -189,7 +185,7 @@ ${DEB}: ${_upstream_tarball_path}
 >	&& tar zxf "${_upstream_tarball_dash_to_underscore}" \
 >	&& cd "${_upstream_tarball_prefix}" \
 >	&& cp --recursive "${CURDIR}/${DEBIAN_DIR}" "./${DEBIAN_DIR}" \
->	&& ${DEBUILD} --rootcmd=sudo --unsigned-source --unsigned-changes
+>	&& ${DEBUILD} --rootcmd=sudo --unsigned-source --unsigned-changes --lintian-opts --profile debian
 
 .PHONY: ${CLEAN}
 ${CLEAN}:
