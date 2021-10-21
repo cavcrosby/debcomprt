@@ -5,6 +5,8 @@
 # recursive variables
 SHELL = /usr/bin/sh
 BUILD_DIR = ./build
+DEBIAN_DIR = debian
+DEBIAN_DIR_PATH = ./${DEBIAN_DIR}
 TARGET_EXEC = debcomprt
 target_exec_path = ${BUILD_DIR}/${TARGET_EXEC}
 export PROG_DATA_DIR = /usr/local/share/debcomprt
@@ -23,16 +25,21 @@ maintainer_scripts_vars = \
 GO = go
 GIT = git
 SUDO = sudo
+DEBUILD = debuild
 ENVSUBST = envsubst
 ADDLICENSE = addlicense
 executables = \
+	${SUDO}\
 	${GIT}\
-	${GO}
+	${GO}\
+	${DEBUILD}
 
 # tools, inspired by:
 # https://stackoverflow.com/questions/56636580/replace-retool-with-tools-go-for-multi-developer-and-ci-environments-using-go-mo#answer-56640587
-GO_TOOLS = github.com/cavcrosby/genruntime-vars
-OPT_GO_TOOLS = github.com/google/addlicense
+REQ_GO_TOOLS = \
+	github.com/cavcrosby/genruntime-vars
+DEV_GO_TOOLS = \
+	github.com/google/addlicense
 
 # gnu install directory variables, for reference:
 # https://golang.org/doc/tutorial/compile-install
@@ -42,10 +49,10 @@ bin_dir = ${exec_prefix}/bin
 
 # targets
 HELP = help
+SETUP = setup
 INSTALL = install
 UNINSTALL = uninstall
 INSTALL_TOOLS = install-tools
-INSTALL_NEEDED_TOOLS = install-needed-tools
 TEST = test
 ADD_LICENSE = add-license
 MAINTAINER_SCRIPTS = maintainer-scripts
@@ -65,7 +72,10 @@ else
 	override version := $(shell echo ${version} | sed 's/v//')
 endif
 
-src := $(shell find . \( -type f \) -and \( -iname '*.go' \) -and \( -not -iregex '.*/vendor.*' \))
+src := $(shell find . \( -type f \) \
+	-and \( -name '*.go' \) \
+	-and \( -not -iregex '.*/vendor.*' \) \
+)
 _upstream_tarball_prefix = ${TARGET_EXEC}-${version}
 _upstream_tarball = ${_upstream_tarball_prefix}${UPSTREAM_TARBALL_EXT}
 _upstream_tarball_dash_to_underscore = $(shell echo "${_upstream_tarball}" | awk --field-separator='-' '{print $$1"_"$$2}')
@@ -73,15 +83,15 @@ _upstream_tarball_path = ${BUILD_DIR}/${_upstream_tarball}
 
 SHELL_TEMPLATE_EXT := .shtpl
 shell_template_wildcard := %${SHELL_TEMPLATE_EXT}
-# DISCUSS(cavcrosby): there are other cases where I manually conjoin the path for
-# the expected file(s) to be generated from shell template(s). I will want to look
-# into making things more consistent. This includes perhaps putting the debian
-# directory path into a variable.
-maintainer_script_shell_templates := $(shell find ./debian -name *${SHELL_TEMPLATE_EXT})
+# DISCUSS(cavcrosby): there are other implicit rules where I manually conjoin the
+# path for the expected file(s) that are generated from shell template(s). I
+# will want to look into making things more consistent. This includes perhaps
+# putting the debian directory path into a variable.
+maintainer_script_shell_templates := $(shell find ${DEBIAN_DIR_PATH} -name *${SHELL_TEMPLATE_EXT})
 
 # Determines the maintainer script name(s) to be generated from the template(s).
 # Short hand notation for string substitution: $(text:pattern=replacement).
-maintainer_scripts := $(maintainer_script_shell_templates:${SHELL_TEMPLATE_EXT}=)
+_maintainer_scripts := $(maintainer_script_shell_templates:${SHELL_TEMPLATE_EXT}=)
 
 # inspired from:
 # https://stackoverflow.com/questions/5618615/check-if-a-program-exists-from-a-makefile#answer-25668869
@@ -91,6 +101,7 @@ _check_executables := $(foreach exec,${executables},$(if $(shell command -v ${ex
 ${HELP}:
 	# inspired by the makefiles of the Linux kernel and Mercurial
 >	@echo 'Common make targets:'
+>	@echo '  ${SETUP}              - installs the dependencies for this project'
 >	@echo '  ${TARGET_EXEC}          - the ${TARGET_EXEC} binary'
 >	@echo '  ${INSTALL}            - installs the decomprt binary and other needed files'
 >	@echo '  ${UNINSTALL}          - uninstalls the decomprt binary and other needed files'
@@ -103,12 +114,12 @@ ${HELP}:
 >	@echo '  COPYRIGHT_HOLDERS     - string denoting copyright holder(s)/author(s)'
 >	@echo '                          (e.g. "John Smith, Alice Smith" or "John Smith")'
 
-.PHONY: ${INSTALL_NEEDED_TOOLS}
-${INSTALL_NEEDED_TOOLS}:
->	${GO} install -mod vendor ${GO_TOOLS}
+.PHONY: ${SETUP}
+${SETUP}:
+>	${GO} install -mod vendor ${REQ_GO_TOOLS}
 
-${TARGET_EXEC}: debcomprt.go ${INSTALL_NEEDED_TOOLS}
->	go generate -mod=vendor
+${TARGET_EXEC}: debcomprt.go
+>	${GO} generate -mod=vendor
 >	${GO} build -o "${target_exec_path}" -buildmode=pie -mod vendor
 
 .PHONY: ${INSTALL}
@@ -121,26 +132,30 @@ ${UNINSTALL}:
 
 .PHONY: ${INSTALL_TOOLS}
 ${INSTALL_TOOLS}:
->	${GO} install -mod vendor ${OPT_GO_TOOLS}
+>	${GO} install -mod vendor ${DEV_GO_TOOLS}
 
 .PHONY: ${TEST}
-${TEST}: ${INSTALL_NEEDED_TOOLS}
+${TEST}:
 	# Trying to expand PATH once in root's shell does not seem to work. Hence the
 	# command substitution to get root's PATH.
 	#
 	# bin_dir may already be in root's PATH, but that's ok.
->	go generate -mod=vendor
+>	${GO} generate -mod=vendor
 >	${SUDO} --shell PATH="${bin_dir}:$$(sudo --shell echo \$$PATH)" ${GO} test -v -mod vendor
 
 .PHONY: ${ADD_LICENSE}
-${ADD_LICENSE}: ${INSTALL_TOOLS}
+${ADD_LICENSE}:
 >	@[ -n "${COPYRIGHT_HOLDERS}" ] || { echo "COPYRIGHT_HOLDERS was not passed into make"; exit 1; }
 >	${ADDLICENSE} -l apache -c "${COPYRIGHT_HOLDERS}" ${src}
 
+# TODO(cavcrosby): variables are case sensitive in makefiles. That said, I
+# believe relying on the case sensitivity to be asking for trouble. This should
+# be refactored in other projects as well to use a underscore as prefix to the
+# variable name.
 .PHONY: ${MAINTAINER_SCRIPTS}
-${MAINTAINER_SCRIPTS}: ${maintainer_scripts}
+${MAINTAINER_SCRIPTS}: ${_maintainer_scripts}
 
-${maintainer_scripts}: ${maintainer_script_shell_templates}
+${_maintainer_scripts}: ${maintainer_script_shell_templates}
 >	${ENVSUBST} '${maintainer_scripts_vars}' < "$<" > "$@"
 
 .PHONY: ${UPSTREAM_TARBALL}
@@ -150,8 +165,8 @@ ${_upstream_tarball_path}: ${MAINTAINER_SCRIPTS}
 >	mkdir --parents "${BUILD_DIR}"
 >	tar zcf "$@" \
 		--transform 's,^\.,${_upstream_tarball_prefix},' \
-		--exclude=debian \
-		--exclude=debian/* \
+		--exclude=${DEBIAN_DIR_PATH} \
+		--exclude=${DEBIAN_DIR_PATH}/* \
 		--exclude="${BUILD_DIR}" \
 		--exclude="${BUILD_DIR}"/* \
 		--exclude-vcs-ignores \
@@ -173,8 +188,8 @@ ${DEB}: ${_upstream_tarball_path}
 >	&& mv "${_upstream_tarball}" "${_upstream_tarball_dash_to_underscore}" \
 >	&& tar zxf "${_upstream_tarball_dash_to_underscore}" \
 >	&& cd "${_upstream_tarball_prefix}" \
->	&& cp --recursive "${CURDIR}/debian" ./debian \
->	&& debuild --rootcmd=sudo --unsigned-source --unsigned-changes
+>	&& cp --recursive "${CURDIR}/${DEBIAN_DIR}" "./${DEBIAN_DIR}" \
+>	&& ${DEBUILD} --rootcmd=sudo --unsigned-source --unsigned-changes
 
 .PHONY: ${CLEAN}
 ${CLEAN}:
