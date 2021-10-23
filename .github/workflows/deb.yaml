@@ -32,12 +32,43 @@ jobs:
       run: echo "GIT_TAG=${GITHUB_REF#refs/tags/}" >> ${GITHUB_ENV}
 
     - name: Install dependencies
-      run: sudo apt-get install build-essential debhelper debootstrap devscripts --assume-yes
+      run: |
+        sudo apt-get install --assume-yes \ 
+          build-essential \
+          ca-certificates \
+          curl \
+          debhelper \
+          devscripts \
+          gnupg \
+          lsb-release
+
+    - name: Grab Docker's official GPG key
+      run: |
+         curl --fail --show-error --location https://download.docker.com/linux/ubuntu/gpg 
+          | sudo gpg --dearmor --output /usr/share/keyrings/docker-archive-keyring.gpg
+
+    - name: Add Docker's stable apt repository
+      run: |
+         echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release --codename --short) stable" \
+          | sudo tee /etc/apt/sources.list.d/docker.list
+
+    - name: Install the Docker Engine
+      run: |
+        sudo apt-get update
+        sudo apt-get install --assume-yes \ 
+          docker-ce \
+          docker-ce-cli \
+          containerd.io
+
+    - name: Verify Docker's Engine was installed
+      run: |
+        sudo docker run hello-world
 
     - name: Build deb
       run: |
         make setup
-        make version=${{ env.GIT_TAG }} deb
+        make DEBCOMPRT_VERSION=${{ env.GIT_TAG }} deb
 
     - uses: jfrog/setup-jfrog-cli@v2
       env:

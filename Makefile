@@ -4,7 +4,8 @@
 
 # recursive variables
 SHELL = /usr/bin/sh
-BUILD_DIR = ./build
+BUILD_DIR_NAME = build
+BUILD_DIR = ./${BUILD_DIR_NAME}
 DEBIAN_DIR = debian
 DEBIAN_DIR_PATH = ./${DEBIAN_DIR}
 TARGET_EXEC = debcomprt
@@ -25,14 +26,13 @@ maintainer_scripts_vars = \
 GO = go
 GIT = git
 SUDO = sudo
-DEBUILD = debuild
+DOCKER = docker
 ENVSUBST = envsubst
 ADDLICENSE = addlicense
 executables = \
 	${SUDO}\
 	${GIT}\
-	${GO}\
-	${DEBUILD}
+	${GO}
 
 # tools, inspired by:
 # https://stackoverflow.com/questions/56636580/replace-retool-with-tools-go-for-multi-developer-and-ci-environments-using-go-mo#answer-56640587
@@ -40,6 +40,10 @@ REQ_GO_TOOLS = \
 	github.com/cavcrosby/genruntime-vars
 DEV_GO_TOOLS = \
 	github.com/google/addlicense
+
+# docker related variables
+DOCKER_REPO = cavcrosby/debcomprt
+DOCKER_LATEST_VERSION_TAG = v1.0.0
 
 # gnu install directory variables, for reference:
 # https://golang.org/doc/tutorial/compile-install
@@ -56,27 +60,41 @@ INSTALL_TOOLS = install-tools
 TEST = test
 ADD_LICENSE = add-license
 MAINTAINER_SCRIPTS = maintainer-scripts
+DOCKER_IMAGE = docker-image
 UPSTREAM_TARBALL = upstream-tarball
 DEB = deb
 CLEAN = clean
 
 # to be passed in at make runtime
 COPYRIGHT_HOLDERS =
+IMAGE_RELEASE_BUILD =
 
 # simply expanded variables
 # inspired from:
 # https://devconnected.com/how-to-list-git-tags/#Find_Latest_Git_Tag_Available
-ifeq (${version},)
-	override version := $(shell ${GIT} describe --tags --abbrev=0 | sed 's/v//')
+ifeq (${DEBCOMPRT_VERSION},)
+	override DEBCOMPRT_VERSION := $(shell ${GIT} describe --tags --abbrev=0 | sed 's/v//')
 else
-	override version := $(shell echo ${version} | sed 's/v//')
+	override DEBCOMPRT_VERSION := $(shell echo ${DEBCOMPRT_VERSION} | sed 's/v//')
+endif
+
+ifdef IMAGE_RELEASE_BUILD
+	DOCKER_BUILD_OPTS = \
+		--tag \
+		${DOCKER_REPO}:latest \
+		--tag \
+		${DOCKER_REPO}:${DOCKER_LATEST_VERSION_TAG}-bullseye
+else
+	DOCKER_BUILD_OPTS = \
+		--tag \
+		${DOCKER_REPO}:test
 endif
 
 src := $(shell find . \( -type f \) \
 	-and \( -name '*.go' \) \
 	-and \( -not -iregex '.*/vendor.*' \) \
 )
-_upstream_tarball_prefix = ${TARGET_EXEC}-${version}
+_upstream_tarball_prefix = ${TARGET_EXEC}-${DEBCOMPRT_VERSION}
 _upstream_tarball = ${_upstream_tarball_prefix}${UPSTREAM_TARBALL_EXT}
 _upstream_tarball_dash_to_underscore = $(shell echo "${_upstream_tarball}" | awk --field-separator='-' '{print $$1"_"$$2}')
 _upstream_tarball_path = ${BUILD_DIR}/${_upstream_tarball}
@@ -158,6 +176,14 @@ ${MAINTAINER_SCRIPTS}: ${_maintainer_scripts}
 ${_maintainer_scripts}: ${maintainer_script_shell_templates}
 >	${ENVSUBST} '${maintainer_scripts_vars}' < "$<" > "$@"
 
+.PHONY: ${DOCKER_IMAGE}
+${DOCKER_IMAGE}:
+>	${DOCKER} build \
+		--build-arg BRANCH="$$(git branch --show-current)" \
+		--build-arg COMMIT="$$(git show --format=%h --no-patch)" \
+		${DOCKER_BUILD_OPTS} \
+		.
+
 .PHONY: ${UPSTREAM_TARBALL}
 ${UPSTREAM_TARBALL}: ${_upstream_tarball_path}
 
@@ -183,9 +209,13 @@ ${DEB}: ${_upstream_tarball_path}
 >	cd "${BUILD_DIR}" \
 >	&& mv "${_upstream_tarball}" "${_upstream_tarball_dash_to_underscore}" \
 >	&& tar zxf "${_upstream_tarball_dash_to_underscore}" \
->	&& cd "${_upstream_tarball_prefix}" \
->	&& cp --recursive "${CURDIR}/${DEBIAN_DIR}" "./${DEBIAN_DIR}" \
->	&& ${DEBUILD} --rootcmd=sudo --unsigned-source --unsigned-changes --lintian-opts --profile debian
+>	&& cp --recursive "${CURDIR}/${DEBIAN_DIR}" "${_upstream_tarball_prefix}/${DEBIAN_DIR}" \
+>	&& ${DOCKER} run \
+		--volume "${CURDIR}/${BUILD_DIR_NAME}:/debcomprt/build" \
+		--env EXTRACTED_UPSTREAM_TARBALL="${_upstream_tarball_prefix}" \
+		--env DEBCOMPRT_VERSION=${DEBCOMPRT_VERSION} \
+		--rm --name debcomprt \
+		${DOCKER_REPO}:latest
 
 .PHONY: ${CLEAN}
 ${CLEAN}:
