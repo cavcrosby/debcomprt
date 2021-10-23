@@ -30,7 +30,10 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install build-essential debootstrap devscripts --assume-yes
+        sudo apt-get install --assume-yes \
+          build-essential \
+          debootstrap \
+          devscripts
 
     - name: Build
       run: |
@@ -61,7 +64,11 @@ jobs:
       run: sudo go env
 
     - name: Install dependencies
-      run: sudo apt-get install build-essential devscripts --assume-yes
+      run: |
+        sudo apt-get update
+        sudo apt-get install --assume-yes \
+          build-essential \
+          devscripts
 
     - name: Build
       run: |
