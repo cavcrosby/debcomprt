@@ -18,6 +18,8 @@ debcomprt (2.1.0-1) bullseye; urgency=medium
       not exist to appear as if it can be changed without repercussion.
         * Said configuration file was never intended to be used by the
           maintainer scripts.
+  * Add a new docker container to perform deb packaging in, both locally
+    and in GitHub Action workflows.
 
  -- Conner Crosby <conner@cavcrosby.tech>  Wed, 20 Oct 2021 22:32:49 -0400
 
