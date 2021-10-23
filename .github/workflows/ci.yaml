@@ -28,7 +28,9 @@ jobs:
       run: sudo go env
 
     - name: Install dependencies
-      run: sudo apt-get install build-essential debootstrap devscripts --assume-yes
+      run: |
+        sudo apt-get update
+        sudo apt-get install build-essential debootstrap devscripts --assume-yes
 
     - name: Build
       run: |
