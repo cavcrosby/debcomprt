@@ -34,7 +34,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install --assume-yes \ 
+        sudo apt-get install --assume-yes \
           build-essential \
           ca-certificates \
           curl \
@@ -43,9 +43,9 @@ jobs:
           gnupg \
           lsb-release
 
-    - name: Grab Docker's official GPG key
+    - name: Grab Docker's Official GPG key
       run: |
-         curl --fail --show-error --location https://download.docker.com/linux/ubuntu/gpg 
+         curl --fail --show-error --location https://download.docker.com/linux/ubuntu/gpg \
           | sudo gpg --dearmor --output /usr/share/keyrings/docker-archive-keyring.gpg
 
     - name: Add Docker's stable apt repository
@@ -57,7 +57,7 @@ jobs:
     - name: Install the Docker Engine
       run: |
         sudo apt-get update
-        sudo apt-get install --assume-yes \ 
+        sudo apt-get install --assume-yes \
           docker-ce \
           docker-ce-cli \
           containerd.io
