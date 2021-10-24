@@ -43,7 +43,8 @@ RUN ln --symbolic --force /bin/sh /usr/bin/sh \
 
 RUN groupadd --gid "${GROUP_ID}" "${group_name}" \
     && useradd --create-home --home-dir "${user_home}" --uid "${USER_ID}" --gid "${GROUP_ID}" --shell /bin/bash "${USER_NAME}" \
-    && echo "${USER_NAME} ALL=(ALL:ALL) NOPASSWD: /debcomprt/build/debcomprt-*/debian/rules" > "/etc/sudoers.d/${USER_NAME}"
+    && echo "Defaults       env_keep += \"DEBCOMPRT_VERSION\"" > "/etc/sudoers.d/${USER_NAME}" \
+    && echo "${USER_NAME} ALL=(ALL:ALL) PASSWD: ALL, NOPASSWD: /debcomprt/build/debcomprt-*/debian/rules" >> "/etc/sudoers.d/${USER_NAME}"
 
 USER "${USER_NAME}"
-ENTRYPOINT ["/bin/bash", "-c", "cd ${EXTRACTED_UPSTREAM_TARBALL} && make setup && debuild --rootcmd=sudo --unsigned-source --unsigned-changes"]
+ENTRYPOINT ["/bin/bash", "-c", "cd ${EXTRACTED_UPSTREAM_TARBALL} && make setup && debuild --preserve-envvar='DEBCOMPRT_VERSION' --rootcmd=sudo --unsigned-source --unsigned-changes"]

@@ -43,7 +43,7 @@ DEV_GO_TOOLS = \
 
 # docker related variables
 DOCKER_REPO = cavcrosby/debcomprt
-DOCKER_LATEST_VERSION_TAG = v1.0.0
+DOCKER_LATEST_VERSION_TAG = v1.1.0
 
 # gnu install directory variables, for reference:
 # https://golang.org/doc/tutorial/compile-install
