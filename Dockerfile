@@ -7,12 +7,9 @@ LABEL tech.cavcrosby.debcomprt.commit="${COMMIT}"
 LABEL tech.cavcrosby.debcomprt.vcs-repo="https://github.com/cavcrosby/debcomprt"
 
 # create user that will build software from project
-ARG USER_NAME="builder"
-ARG group_name="${USER_NAME}"
-ARG USER_ID="1000"
-ARG GROUP_ID="1000"
-ARG user_home="/home/${USER_NAME}"
-
+ENV BUILDER_USER_NAME="builder"
+ENV builder_group_name="${BUILDER_USER_NAME}"
+ENV builder_user_home="/home/${BUILDER_USER_NAME}"
 ENV WORKING_DIR "/debcomprt/build"
 WORKDIR "${WORKING_DIR}"
 
@@ -41,10 +38,15 @@ RUN ln --symbolic --force /bin/sh /usr/bin/sh \
     && ln --symbolic --force /usr/local/go/bin/go /usr/bin/go \
     && rm /var/lib/dpkg/info/libc6:amd64.symbols
 
-RUN groupadd --gid "${GROUP_ID}" "${group_name}" \
-    && useradd --create-home --home-dir "${user_home}" --uid "${USER_ID}" --gid "${GROUP_ID}" --shell /bin/bash "${USER_NAME}" \
-    && echo "Defaults       env_keep += \"DEBCOMPRT_VERSION\"" > "/etc/sudoers.d/${USER_NAME}" \
-    && echo "${USER_NAME} ALL=(ALL:ALL) PASSWD: ALL, NOPASSWD: /debcomprt/build/debcomprt-*/debian/rules" >> "/etc/sudoers.d/${USER_NAME}"
+RUN echo "Defaults       env_keep += \"DEBCOMPRT_VERSION\"" > "/etc/sudoers.d/${BUILDER_USER_NAME}" \
+    && echo "${BUILDER_USER_NAME} ALL=(ALL:ALL) PASSWD: ALL, NOPASSWD: /debcomprt/build/debcomprt-*/debian/rules" >> "/etc/sudoers.d/${BUILDER_USER_NAME}"
 
-USER "${USER_NAME}"
-ENTRYPOINT ["/bin/bash", "-c", "cd ${EXTRACTED_UPSTREAM_TARBALL} && make setup && debuild --preserve-envvar='DEBCOMPRT_VERSION' --rootcmd=sudo --unsigned-source --unsigned-changes"]
+ENTRYPOINT [ \
+    "/bin/bash", \
+    "-c", \
+    "cd ${EXTRACTED_UPSTREAM_TARBALL} \
+        && groupadd --gid \"${LOCAL_GROUP_ID}\" \"${builder_group_name}\" \
+        && useradd --create-home --home-dir \"${builder_user_home}\" --uid \"${LOCAL_USER_ID}\" --gid \"${LOCAL_GROUP_ID}\" --shell /bin/bash \"${BUILDER_USER_NAME}\" \
+        && sudo --shell --user \"${BUILDER_USER_NAME}\" make setup \
+        && sudo --shell --user \"${BUILDER_USER_NAME}\" -- debuild --preserve-envvar='DEBCOMPRT_VERSION' --rootcmd=sudo --unsigned-source --unsigned-changes" \
+]

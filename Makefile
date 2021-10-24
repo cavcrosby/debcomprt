@@ -43,7 +43,8 @@ DEV_GO_TOOLS = \
 
 # docker related variables
 DOCKER_REPO = cavcrosby/debcomprt
-DOCKER_LATEST_VERSION_TAG = v1.1.0
+DOCKER_REPO_CONTEXT = latest
+DOCKER_LATEST_VERSION_TAG = v1.1.1
 
 # gnu install directory variables, for reference:
 # https://golang.org/doc/tutorial/compile-install
@@ -81,13 +82,14 @@ endif
 ifdef IMAGE_RELEASE_BUILD
 	DOCKER_BUILD_OPTS = \
 		--tag \
-		${DOCKER_REPO}:latest \
+		${DOCKER_REPO}:${DOCKER_REPO_CONTEXT} \
 		--tag \
 		${DOCKER_REPO}:${DOCKER_LATEST_VERSION_TAG}-bullseye
 else
+	DOCKER_REPO_CONTEXT = test
 	DOCKER_BUILD_OPTS = \
 		--tag \
-		${DOCKER_REPO}:test
+		${DOCKER_REPO}:${DOCKER_REPO_CONTEXT}
 endif
 
 src := $(shell find . \( -type f \) \
@@ -213,9 +215,11 @@ ${DEB}: ${_upstream_tarball_path}
 >	&& ${DOCKER} run \
 		--volume "${CURDIR}/${BUILD_DIR_NAME}:/debcomprt/build" \
 		--env EXTRACTED_UPSTREAM_TARBALL="${_upstream_tarball_prefix}" \
+		--env LOCAL_USER_ID="$$(id --user)" \
+		--env LOCAL_GROUP_ID="$$(id --group)" \
 		--env DEBCOMPRT_VERSION=${DEBCOMPRT_VERSION} \
 		--rm --name debcomprt \
-		${DOCKER_REPO}:latest
+		${DOCKER_REPO}:${DOCKER_REPO_CONTEXT}
 
 .PHONY: ${CLEAN}
 ${CLEAN}:
