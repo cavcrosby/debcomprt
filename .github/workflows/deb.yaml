@@ -69,7 +69,7 @@ jobs:
     - name: Build deb
       run: |
         make setup
-        make DEBCOMPRT_VERSION=${{ env.GIT_TAG }} deb
+        make IMAGE_RELEASE_BUILD=1 DEBCOMPRT_VERSION=${{ env.GIT_TAG }} deb
 
     - uses: jfrog/setup-jfrog-cli@v2
       env:
