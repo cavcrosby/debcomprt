@@ -1,28 +1,3 @@
-debcomprt (2.1.0-1) bullseye; urgency=medium
-
-  * These releases will now be under a 'bullseye' distribution.
-    * The target machine operating system is bullseye, so I think this can
-      be justified. The previous entries can also be assumed for bullseye 
-      as well.
-    * A tad related, lintian's error 'bad-distribution-in-changes-file'
-      requires a explicit debian profile to be used (e.g. otherwise my
-      development machine may assume Ubuntu by default). This has been
-      appended as an option to lintian through debuild. For reference:
-      https://bugs.launchpad.net/ubuntu/+source/lintian/+bug/1303603
-
-  * Include setup for debian's maintainer scripts (e.g. prerm, preinst).
-  * Integrate 'go generate' to allow a make synced program data directory
-    between the go code and maintainer scripts.
-    * A configuration file on the filesystem would have been ok for the 
-      debcomprt to read but in my eyes, the above configuration should
-      not exist to appear as if it can be changed without repercussion.
-        * Said configuration file was never intended to be used by the
-          maintainer scripts.
-  * Add a new docker container to perform deb packaging in, both locally
-    and in GitHub Action workflows.
-
- -- Conner Crosby <conner@cavcrosby.tech>  Wed, 20 Oct 2021 22:32:49 -0400
-
 debcomprt (2.0.0-1) stable; urgency=medium
 
   * Have debcomprt run as subcommands now.

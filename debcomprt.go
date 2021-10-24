@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:generate go run -mod=vendor github.com/cavcrosby/genruntime-vars
 package main
 
 import (
@@ -95,8 +94,8 @@ var defaultMirrorMappings = map[string]string{
 	"hirsute": defaultUbuntuMirror,
 }
 
-// A custom callback handler in the event improper cli flag/flag
-// arguments/arguments are passed in.
+// A custom callback handler in the event improper cli
+// flag/flag arguments/arguments are passed in.
 var CustomOnUsageErrorFunc cli.OnUsageErrorFunc = func(context *cli.Context, err error, isSubcommand bool) error {
 	cli.ShowAppHelp(context)
 	log.Panic(err)
@@ -382,6 +381,7 @@ func locateField(fPath string, fieldSepRegex *regexp.Regexp, matchIndex, returnI
 
 // Get required extra data to be used by the program.
 func getProgData(alias string, preprocessAliases bool, pconfs *progConfigs) error {
+	progDataDir := appdirs.SiteDataDir(progname, "", "")
 	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
 
 	if alias != noAlias {

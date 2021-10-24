@@ -32,25 +32,10 @@ jobs:
       run: echo "GIT_TAG=${GITHUB_REF#refs/tags/}" >> ${GITHUB_ENV}
 
     - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install --assume-yes \
-          build-essential \
-          ca-certificates \
-          curl \
-          debhelper \
-          devscripts \
-          gnupg \
-          lsb-release
-
-    - name: Verify Docker's Engine is installed
-      run: |
-        sudo docker run hello-world
+      run: sudo apt-get install build-essential debhelper debootstrap devscripts --assume-yes
 
     - name: Build deb
-      run: |
-        make setup
-        make IMAGE_RELEASE_BUILD=1 DEBCOMPRT_VERSION=${{ env.GIT_TAG }} deb
+      run: make version=${{ env.GIT_TAG }} deb
 
     - uses: jfrog/setup-jfrog-cli@v2
       env:

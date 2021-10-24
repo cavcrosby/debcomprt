@@ -28,16 +28,10 @@ jobs:
       run: sudo go env
 
     - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install --assume-yes \
-          build-essential \
-          debootstrap \
-          devscripts
+      run: sudo apt-get install build-essential debootstrap --assume-yes
 
     - name: Build
       run: |
-        make setup
         make debcomprt
         make install
 
@@ -64,16 +58,10 @@ jobs:
       run: sudo go env
 
     - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install --assume-yes \
-          build-essential \
-          devscripts
+      run: sudo apt-get install build-essential debootstrap --assume-yes
 
     - name: Build
-      run: |
-        make setup
-        make debcomprt
+      run: make debcomprt
     
     - uses: actions/upload-artifact@v2
       with:
