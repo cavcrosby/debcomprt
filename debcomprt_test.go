@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:generate go run -mod=vendor github.com/cavcrosby/genruntime-vars
 package main
 
 import (
@@ -87,8 +88,7 @@ func stat(fPath string, stat *syscall.Stat_t) error {
 }
 
 // Setup the program's data directory. Ensure any validation/checking is done here.
-func setupProgDataDir() (string, error) {
-	progDataDir := appdirs.SiteDataDir(progname, "", "")
+func setupProgDataDir() error {
 	if _, err := os.Stat(progDataDir); errors.Is(err, fs.ErrNotExist) {
 		os.MkdirAll(progDataDir, os.ModeDir|(OS_USER_R|OS_USER_W|OS_USER_X|OS_GROUP_R|OS_GROUP_X|OS_OTH_R|OS_OTH_X))
 	} else if err != nil {
@@ -160,7 +160,11 @@ func TestCopyDestAlreadyExists(t *testing.T) {
 }
 
 func TestGetProgData(t *testing.T) {
-	progDataDir := appdirs.SiteDataDir(progname, "", "")
+	err := setupProgDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	
 	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
 
 	pconfs := &progConfigs{

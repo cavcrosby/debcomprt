@@ -16,5 +16,7 @@
 
 # repo specfic
 /build
+/debian/*.prerm
+runtime_vars.go
 comprtconfig
 comprtinc

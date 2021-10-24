@@ -17,5 +17,6 @@
 package tools
 
 import (
+	_ "github.com/cavcrosby/genruntime-vars"
 	_ "github.com/google/addlicense"
 )
