@@ -128,11 +128,15 @@ ${HELP}:
 >	@echo '  ${INSTALL_TOOLS}      - installs optional development tools used for the project'
 >	@echo '  ${TEST}               - runs test suite for the project'
 >	@echo '  ${ADD_LICENSE}        - adds license header to src files'
+>	@echo '  ${DOCKER_IMAGE}       - creates the docker image used to make the project'\''s'
+>	@echo '                       debian packages '
 >	@echo '  ${DEB}                - generates the project'\''s debian package(s)'
 >	@echo '  ${CLEAN}              - remove files created by other targets'
 >	@echo 'Common make configurations (e.g. make [config]=1 [targets]):'
 >	@echo '  COPYRIGHT_HOLDERS     - string denoting copyright holder(s)/author(s)'
 >	@echo '                          (e.g. "John Smith, Alice Smith" or "John Smith")'
+>	@echo '  IMAGE_RELEASE_BUILD   - if set, this will cause targets dealing with docker'
+>	@echo '                          images to work with the :latest image'
 
 .PHONY: ${SETUP}
 ${SETUP}:
@@ -217,7 +221,7 @@ ${DEB}: ${_upstream_tarball_path}
 		--env EXTRACTED_UPSTREAM_TARBALL="${_upstream_tarball_prefix}" \
 		--env LOCAL_USER_ID="$$(id --user)" \
 		--env LOCAL_GROUP_ID="$$(id --group)" \
-		--env DEBCOMPRT_VERSION=${DEBCOMPRT_VERSION} \
+		--env DEBCOMPRT_VERSION="${DEBCOMPRT_VERSION}" \
 		--rm --name debcomprt \
 		${DOCKER_REPO}:${DOCKER_REPO_CONTEXT}
 
