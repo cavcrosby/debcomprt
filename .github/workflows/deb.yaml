@@ -58,4 +58,4 @@ jobs:
       
     - name: Upload deb to artifactory
       run: |
-        jfrog rt upload --deb=stable/main/amd64 "$(find ./build/*.deb)" "deb/pool/d/debcomprt/$(find ./build/*.deb -printf '%f')"
+        jfrog rt upload --deb=bullseye/main/amd64 "$(find ./build/*.deb)" "deb/pool/d/debcomprt/$(find ./build/*.deb -printf '%f')"
