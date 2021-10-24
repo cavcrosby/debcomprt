@@ -43,26 +43,7 @@ jobs:
           gnupg \
           lsb-release
 
-    - name: Grab Docker's Official GPG key
-      run: |
-         curl --fail --show-error --location https://download.docker.com/linux/ubuntu/gpg \
-          | sudo gpg --dearmor --output /usr/share/keyrings/docker-archive-keyring.gpg
-
-    - name: Add Docker's stable apt repository
-      run: |
-         echo \
-          "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release --codename --short) stable" \
-          | sudo tee /etc/apt/sources.list.d/docker.list
-
-    - name: Install the Docker Engine
-      run: |
-        sudo apt-get update
-        sudo apt-get install --assume-yes \
-          docker-ce \
-          docker-ce-cli \
-          containerd.io
-
-    - name: Verify Docker's Engine was installed
+    - name: Verify Docker's Engine is installed
       run: |
         sudo docker run hello-world
 

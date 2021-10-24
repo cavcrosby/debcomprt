@@ -41,6 +41,11 @@ RUN ln --symbolic --force /bin/sh /usr/bin/sh \
 RUN echo "Defaults       env_keep += \"DEBCOMPRT_VERSION\"" > "/etc/sudoers.d/${BUILDER_USER_NAME}" \
     && echo "${BUILDER_USER_NAME} ALL=(ALL:ALL) PASSWD: ALL, NOPASSWD: /debcomprt/build/debcomprt-*/debian/rules" >> "/etc/sudoers.d/${BUILDER_USER_NAME}"
 
+# If this entrypoint gets any bigger, then I am ok going to a entrypoint script.
+# While it is possible to perhaps use su/sudo with wrapping commands in escaped
+# quotes, that will make this pretty hard to read. Which I would like to avoid.
+# For reference:
+# https://stackoverflow.com/questions/52817150/dockerfile-entrypoint-unable-to-switch-user
 ENTRYPOINT [ \
     "/bin/bash", \
     "-c", \
