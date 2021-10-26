@@ -32,6 +32,9 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 )
 
 const (
@@ -158,11 +161,10 @@ func TestCopyDestAlreadyExists(t *testing.T) {
 }
 
 func TestGetProgData(t *testing.T) {
-	err := setupProgDataDir()
-	if err != nil {
+	if err := setupProgDataDir(); err != nil {
 		t.Fatal(err)
 	}
-	
+
 	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
 
 	pconfs := &progConfigs{
@@ -172,13 +174,64 @@ func TestGetProgData(t *testing.T) {
 	if err := getProgData(pconfs.alias, false, pconfs); err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(progDataDir)
 
 	if _, err := os.Stat(progDataDir); errors.Is(err, fs.ErrNotExist) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(comprtConfigsRepoPath); errors.Is(err, fs.ErrNotExist) {
 		t.Fatal(err)
+	}
+}
+
+func TestGetProgDataPullsIfLocalRepoExists(t *testing.T) {
+	tempDirPath, err := os.MkdirTemp("", "_"+tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDirPath)
+
+	// temporarily set to point getProgData to the test's program data dir
+	previousProgDataDir := progDataDir
+	progDataDir = tempDirPath
+	defer func() {
+		progDataDir = previousProgDataDir
+	}()
+
+	comprtConfigsRepoPath := filepath.Join(progDataDir, comprtConfigsRepoName)
+	comprtConfigsRepo, err := git.PlainInit(comprtConfigsRepoPath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var remoteName string = "origin"
+	if _, err := comprtConfigsRepo.CreateRemote(&config.RemoteConfig{
+		Name: remoteName,
+		URLs: []string{comprtConfigsRepoUrl},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := comprtConfigsRepo.Fetch(&git.FetchOptions{
+		RemoteName: remoteName,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	pconfs := &progConfigs{
+		alias: "altaria",
+	}
+
+	if err := getProgData(pconfs.alias, false, pconfs); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := ioutil.ReadDir(comprtConfigsRepoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(files) <= 1 {
+		t.Fatalf("comprtConfigsRepo was the same after performing git pull")
 	}
 }
 
@@ -226,8 +279,7 @@ func TestLocateField(t *testing.T) {
 }
 
 func TestMountAndUnMountChrootFileSystems(t *testing.T) {
-	err := setupProgDataDir()
-	if err != nil {
+	if err := setupProgDataDir(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -337,8 +389,7 @@ func TestChroot(t *testing.T) {
 }
 
 func TestMountAndUnMountChrootFileSystemsRecoveryIntegration(t *testing.T) {
-	err := setupProgDataDir()
-	if err != nil {
+	if err := setupProgDataDir(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -390,8 +441,7 @@ func TestCreateCommandIntegration(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	err := setupProgDataDir()
-	if err != nil {
+	if err := setupProgDataDir(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -466,8 +516,7 @@ func TestChrootCommandIntegration(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	err := setupProgDataDir()
-	if err != nil {
+	if err := setupProgDataDir(); err != nil {
 		t.Fatal(err)
 	}
 
