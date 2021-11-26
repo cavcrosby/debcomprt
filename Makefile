@@ -96,10 +96,10 @@ src := $(shell find . \( -type f \) \
 	-and \( -name '*.go' \) \
 	-and \( -not -iregex '.*/vendor.*' \) \
 )
-_upstream_tarball_prefix = ${TARGET_EXEC}-${DEBCOMPRT_VERSION}
-_upstream_tarball = ${_upstream_tarball_prefix}${UPSTREAM_TARBALL_EXT}
-_upstream_tarball_dash_to_underscore = $(shell echo "${_upstream_tarball}" | awk --field-separator='-' '{print $$1"_"$$2}')
-_upstream_tarball_path = ${BUILD_DIR}/${_upstream_tarball}
+_upstream_tarball_prefix := ${TARGET_EXEC}-${DEBCOMPRT_VERSION}
+_upstream_tarball := ${_upstream_tarball_prefix}${UPSTREAM_TARBALL_EXT}
+_upstream_tarball_dash_to_underscore := $(shell echo "${_upstream_tarball}" | awk --field-separator='-' '{print $$1"_"$$2}')
+_upstream_tarball_path := ${BUILD_DIR}/${_upstream_tarball}
 
 SHELL_TEMPLATE_EXT := .shtpl
 shell_template_wildcard := %${SHELL_TEMPLATE_EXT}
