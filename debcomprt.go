@@ -24,6 +24,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -52,6 +53,7 @@ const (
 
 	defaultDebianMirror = "http://ftp.us.debian.org/debian/"
 	defaultUbuntuMirror = "http://archive.ubuntu.com/ubuntu/"
+	rootUid             = 0
 	noAlias             = "none"
 	progname            = "debcomprt"
 )
@@ -515,6 +517,8 @@ func unMountChrootFileSystems(devicesToMount []string, target string) error {
 			if err == nil {
 				break
 			} else if retries == 1 {
+				// inspired by:
+				// https://stackoverflow.com/questions/35615839/how-to-merge-multiple-strings-and-int-into-a-single-string#answer-35624701
 				fmt.Println(strings.Join([]string{progname, ": ", filesys, " does not want to unmount, will try again later"}, ""))
 				fileSystemsUnmountBacklog = append(fileSystemsUnmountBacklog, filesys)
 			} else if errors.Is(err, syscall.EBUSY) {
@@ -826,6 +830,14 @@ func main() {
 		comprtIncludesPath: filepath.Join(".", comprtIncludeFile),
 	}
 	pconfs.parseCmdArgs()
+
+	user, err := user.Current()
+	if err != nil {
+		log.Panic(err)
+	}
+	if user.Uid != strconv.Itoa(rootUid) {
+		log.Panic(strings.Join([]string{progname, ": must be ran as root!"}, ""))
+	}
 
 	switch pconfs.command {
 	case "chroot":
