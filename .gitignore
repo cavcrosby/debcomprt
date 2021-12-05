@@ -15,8 +15,8 @@
 # vendor/
 
 # repo specfic
-/build
-/debian/*.prerm
+build
+debian/*.prerm
 runtime_vars.go
 comprtconfig
 comprtinc
