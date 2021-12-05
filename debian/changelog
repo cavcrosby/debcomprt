@@ -1,3 +1,14 @@
+debcomprt (2.1.1-1) bullseye; urgency=medium
+
+  * Fix bug where it should be clear that debcomprt needs to be ran as
+    root.
+  * Makefile now supports targets for appending/adding entries to this
+    changelog.
+  * README has been updated with extension to it's description and usage
+    examples have also been added.
+
+ -- Conner Crosby <conner@cavcrosby.tech>  Sat, 04 Dec 2021 22:14:27 -0500
+
 debcomprt (2.1.0-1) bullseye; urgency=medium
 
   * These releases will now be under a 'bullseye' distribution.
