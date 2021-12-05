@@ -29,10 +29,12 @@ SUDO = sudo
 DOCKER = docker
 ENVSUBST = envsubst
 ADDLICENSE = addlicense
+DCH = dch
 executables = \
 	${SUDO}\
 	${GIT}\
-	${GO}
+	${GO}\
+	${DCH}
 
 # tools, inspired by:
 # https://stackoverflow.com/questions/56636580/replace-retool-with-tools-go-for-multi-developer-and-ci-environments-using-go-mo#answer-56640587
@@ -60,6 +62,8 @@ UNINSTALL = uninstall
 INSTALL_TOOLS = install-tools
 TEST = test
 ADD_LICENSE = add-license
+ADD_CHANGELOG_ENTRY = add-changelog-entry
+APPEND_CHANGELOG_ENTRY = append-changelog-entry
 MAINTAINER_SCRIPTS = maintainer-scripts
 DOCKER_IMAGE = docker-image
 UPSTREAM_TARBALL = upstream-tarball
@@ -69,6 +73,8 @@ CLEAN = clean
 # to be passed in at make runtime
 COPYRIGHT_HOLDERS =
 IMAGE_RELEASE_BUILD =
+DEBIAN_REVISION =
+DEBIAN_CODENAME =
 
 # simply expanded variables
 # inspired from:
@@ -98,7 +104,7 @@ src := $(shell find . \( -type f \) \
 )
 _upstream_tarball_prefix := ${TARGET_EXEC}-${DEBCOMPRT_VERSION}
 _upstream_tarball := ${_upstream_tarball_prefix}${UPSTREAM_TARBALL_EXT}
-_upstream_tarball_dash_to_underscore := $(shell echo "${_upstream_tarball}" | awk --field-separator='-' '{print $$1"_"$$2}')
+_upstream_tarball_dash_to_underscore := $(shell echo "${_upstream_tarball}" | awk -F '-' '{print $$1"_"$$2}')
 _upstream_tarball_path := ${BUILD_DIR}/${_upstream_tarball}
 
 SHELL_TEMPLATE_EXT := .shtpl
@@ -137,6 +143,10 @@ ${HELP}:
 >	@echo '                          (e.g. "John Smith, Alice Smith" or "John Smith")'
 >	@echo '  IMAGE_RELEASE_BUILD   - if set, this will cause targets dealing with docker'
 >	@echo '                          images to work with the :latest image'
+>	@echo '  DEBIAN_REVISION       - used when adding a changelog entry to denote the version'
+>	@echo '                          of the Debian package for a upstream version'
+>	@echo '  DEBIAN_CODENAME       - used when adding a changelog entry to denote target'
+>	@echo '                          Debian distribution for the upstream/package version'
 
 .PHONY: ${SETUP}
 ${SETUP}:
@@ -171,6 +181,16 @@ ${TEST}:
 ${ADD_LICENSE}:
 >	@[ -n "${COPYRIGHT_HOLDERS}" ] || { echo "COPYRIGHT_HOLDERS was not passed into make"; exit 1; }
 >	${ADDLICENSE} -l apache -c "${COPYRIGHT_HOLDERS}" ${src}
+
+.PHONY: ${ADD_CHANGELOG_ENTRY}
+${ADD_CHANGELOG_ENTRY}:
+>	@[ -n "${DEBIAN_REVISION}" ] || { echo "DEBIAN_REVISION was not passed into make"; exit 1; }
+>	@[ -n "${DEBIAN_CODENAME}" ] || { echo "DEBIAN_CODENAME was not passed into make"; exit 1; }
+>	${DCH} --newversion "${DEBCOMPRT_VERSION}-${DEBIAN_REVISION}" --distribution "${DEBIAN_CODENAME}"
+
+.PHONY: ${APPEND_CHANGELOG_ENTRY}
+${APPEND_CHANGELOG_ENTRY}:
+>	${DCH} --append
 
 # TODO(cavcrosby): variables are case sensitive in makefiles. That said, I
 # believe relying on the case sensitivity to be asking for trouble. This should
