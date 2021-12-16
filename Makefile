@@ -45,7 +45,7 @@ DEV_GO_TOOLS = \
 
 # docker related variables
 DOCKER_REPO = cavcrosby/debcomprt
-DOCKER_REPO_CONTEXT = latest
+DOCKER_LATEST_TAG = latest
 DOCKER_LATEST_VERSION_TAG = v1.1.1
 
 # gnu install directory variables, for reference:
@@ -88,14 +88,14 @@ endif
 ifdef IMAGE_RELEASE_BUILD
 	DOCKER_BUILD_OPTS = \
 		--tag \
-		${DOCKER_REPO}:${DOCKER_REPO_CONTEXT} \
+		${DOCKER_REPO}:${DOCKER_LATEST_TAG} \
 		--tag \
 		${DOCKER_REPO}:${DOCKER_LATEST_VERSION_TAG}-bullseye
 else
-	DOCKER_REPO_CONTEXT = test
+	DOCKER_LATEST_TAG = test
 	DOCKER_BUILD_OPTS = \
 		--tag \
-		${DOCKER_REPO}:${DOCKER_REPO_CONTEXT}
+		${DOCKER_REPO}:${DOCKER_LATEST_TAG}
 endif
 
 src := $(shell find . \( -type f \) \
@@ -243,7 +243,7 @@ ${DEB}: ${_upstream_tarball_path}
 		--env LOCAL_GROUP_ID="$$(id --group)" \
 		--env DEBCOMPRT_VERSION="${DEBCOMPRT_VERSION}" \
 		--rm --name debcomprt \
-		${DOCKER_REPO}:${DOCKER_REPO_CONTEXT}
+		${DOCKER_REPO}:${DOCKER_LATEST_TAG}
 
 .PHONY: ${CLEAN}
 ${CLEAN}:
