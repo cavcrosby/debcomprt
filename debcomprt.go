@@ -346,8 +346,8 @@ func stringInArr(strArg string, arr *[]string) bool {
 
 // Looks to see if a string from the strArgs is in the string array.
 func stringsInArr(strArgs []string, arr *[]string) bool {
-	for _, value := range strArgs {
-		if stringInArr(value, arr) {
+	for _, val := range strArgs {
+		if stringInArr(val, arr) {
 			return true
 		}
 	}
