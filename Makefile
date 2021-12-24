@@ -4,12 +4,12 @@
 
 # recursive variables
 SHELL = /usr/bin/sh
-BUILD_DIR_NAME = build
-BUILD_DIR = ./${BUILD_DIR_NAME}
+BUILD_DIR = build
+BUILD_DIR_PATH = ./${BUILD_DIR}
 DEBIAN_DIR = debian
 DEBIAN_DIR_PATH = ./${DEBIAN_DIR}
 TARGET_EXEC = debcomprt
-target_exec_path = ${BUILD_DIR}/${TARGET_EXEC}
+target_exec_path = ${BUILD_DIR_PATH}/${TARGET_EXEC}
 export PROG_DATA_DIR = /usr/local/share/debcomprt
 export RUNTIME_VARS_FILE = runtime_vars.go
 UPSTREAM_TARBALL_EXT = .orig.tar.gz
@@ -105,7 +105,7 @@ src := $(shell find . \( -type f \) \
 _upstream_tarball_prefix := ${TARGET_EXEC}-${DEBCOMPRT_VERSION}
 _upstream_tarball := ${_upstream_tarball_prefix}${UPSTREAM_TARBALL_EXT}
 _upstream_tarball_dash_to_underscore := $(shell echo "${_upstream_tarball}" | awk -F '-' '{print $$1"_"$$2}')
-_upstream_tarball_path := ${BUILD_DIR}/${_upstream_tarball}
+_upstream_tarball_path := ${BUILD_DIR_PATH}/${_upstream_tarball}
 
 SHELL_TEMPLATE_EXT := .shtpl
 shell_template_wildcard := %${SHELL_TEMPLATE_EXT}
@@ -214,13 +214,13 @@ ${DOCKER_IMAGE}:
 ${UPSTREAM_TARBALL}: ${_upstream_tarball_path}
 
 ${_upstream_tarball_path}: ${MAINTAINER_SCRIPTS}
->	mkdir --parents "${BUILD_DIR}"
+>	mkdir --parents "${BUILD_DIR_PATH}"
 >	tar zcf "$@" \
 		--transform 's,^\.,${_upstream_tarball_prefix},' \
 		--exclude=${DEBIAN_DIR_PATH} \
 		--exclude=${DEBIAN_DIR_PATH}/* \
-		--exclude="${BUILD_DIR}" \
-		--exclude="${BUILD_DIR}"/* \
+		--exclude="${BUILD_DIR_PATH}" \
+		--exclude="${BUILD_DIR_PATH}"/* \
 		--exclude-vcs-ignores \
 		./.github ./.gitignore ./*
 
@@ -232,12 +232,12 @@ ${DEB}: ${_upstream_tarball_path}
 	# the case that shell templates are used for normal shell scripts, replace each
 	# double quoted shell variable to be evaluated by envsubst in single quotes to
 	# differentiate those to be evaluated by envsubst and those not.
->	cd "${BUILD_DIR}" \
+>	cd "${BUILD_DIR_PATH}" \
 >	&& mv "${_upstream_tarball}" "${_upstream_tarball_dash_to_underscore}" \
 >	&& tar zxf "${_upstream_tarball_dash_to_underscore}" \
 >	&& cp --recursive "${CURDIR}/${DEBIAN_DIR}" "${_upstream_tarball_prefix}/${DEBIAN_DIR}" \
 >	&& ${DOCKER} run \
-		--volume "${CURDIR}/${BUILD_DIR_NAME}:/debcomprt/build" \
+		--volume "${CURDIR}/${BUILD_DIR}:/debcomprt/build" \
 		--env EXTRACTED_UPSTREAM_TARBALL="${_upstream_tarball_prefix}" \
 		--env LOCAL_USER_ID="$$(id --user)" \
 		--env LOCAL_GROUP_ID="$$(id --group)" \
@@ -247,7 +247,7 @@ ${DEB}: ${_upstream_tarball_path}
 
 .PHONY: ${CLEAN}
 ${CLEAN}:
->	${SUDO} rm --recursive --force "${BUILD_DIR}"
+>	${SUDO} rm --recursive --force "${BUILD_DIR_PATH}"
 	# match filename(s) generated from their respective shell template(s)
 >	rm --force $$(find ./debian | grep --only-matching --perl-regexp '[\w\.\/]+(?=\.shtpl)')
 >	rm --force "${RUNTIME_VARS_FILE}"
