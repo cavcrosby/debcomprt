@@ -121,7 +121,7 @@ type progConfigs struct {
 	target             string
 }
 
-// Interprets the command arguments passed in. Saving particular flag/flag
+// Interpret the command arguments passed in. Saving particular flag/flag
 // arguments of interest into 'pconfs'.
 func (pconfs *progConfigs) parseCmdArgs() {
 	var localOsArgs []string = os.Args
