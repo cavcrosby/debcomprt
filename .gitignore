@@ -16,7 +16,7 @@
 
 # repo specific
 build
-debian/*.prerm
 runtime_vars.go
 comprtconfig
 comprtinc
+debian/*.prerm
