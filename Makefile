@@ -19,9 +19,6 @@ _PROG_DATA_DIR = $${PROG_DATA_DIR}
 maintainer_scripts_vars = \
 	${_PROG_DATA_DIR}
 
-# DISCUSS(cavcrosby): according to the make manual, every makefile should define
-# the INSTALL variable. Perhaps look into this later? How does this affect
-# previous makefiles?
 # executables
 GO = go
 GIT = git
@@ -109,10 +106,6 @@ _upstream_tarball_path := ${BUILD_DIR_PATH}/${_upstream_tarball}
 
 SHELL_TEMPLATE_EXT := .shtpl
 shell_template_wildcard := %${SHELL_TEMPLATE_EXT}
-# DISCUSS(cavcrosby): there are other implicit rules where I manually conjoin the
-# path for the expected file(s) that are generated from shell template(s). I
-# will want to look into making things more consistent. This includes perhaps
-# putting the debian directory path into a variable.
 maintainer_script_shell_templates := $(shell find ${DEBIAN_DIR_PATH} -name *${SHELL_TEMPLATE_EXT})
 
 # Determines the maintainer script name(s) to be generated from the template(s).
@@ -228,10 +221,6 @@ ${_upstream_tarball_path}: ${MAINTAINER_SCRIPTS}
 ${DEB}: ${_upstream_tarball_path}
 	# DISCUSS(cavcrosby): add the debian source package to be uploaded as well to
 	# artifactory.
-	# DISCUSS(cavcrosby): inspect other projects where shell templates are used. In
-	# the case that shell templates are used for normal shell scripts, replace each
-	# double quoted shell variable to be evaluated by envsubst in single quotes to
-	# differentiate those to be evaluated by envsubst and those not.
 >	cd "${BUILD_DIR_PATH}" \
 >	&& mv "${_upstream_tarball}" "${_upstream_tarball_dash_to_underscore}" \
 >	&& tar zxf "${_upstream_tarball_dash_to_underscore}" \
