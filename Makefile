@@ -185,10 +185,6 @@ ${ADD_CHANGELOG_ENTRY}:
 ${APPEND_CHANGELOG_ENTRY}:
 >	${DCH} --append
 
-# TODO(cavcrosby): variables are case sensitive in makefiles. That said, I
-# believe relying on the case sensitivity to be asking for trouble. This should
-# be refactored in other projects as well to use a underscore as prefix to the
-# variable name.
 .PHONY: ${MAINTAINER_SCRIPTS}
 ${MAINTAINER_SCRIPTS}: ${_maintainer_scripts}
 
