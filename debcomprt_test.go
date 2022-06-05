@@ -100,8 +100,6 @@ func setupProgDataDir() error {
 }
 
 func TestCopy(t *testing.T) {
-	// inspired by:
-	// https://stackoverflow.com/questions/29505089/how-can-i-compare-two-files-in-golang#answer-29528747
 	tempDirPath, err := os.MkdirTemp("", "_"+tempDir)
 	if err != nil {
 		t.Fatal(err)
@@ -129,6 +127,8 @@ func TestCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// inspired by:
+	// https://stackoverflow.com/questions/29505089/how-can-i-compare-two-files-in-golang#answer-29528747
 	if !bytes.Equal(file1, file2) {
 		t.Fatalf("%s is not the same as %s", filePath1, filePath2)
 	}
